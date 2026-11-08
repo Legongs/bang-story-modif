@@ -16,6 +16,21 @@ export function projectsRoot(): string {
   return dir
 }
 
+export function globalCharactersDir(): string {
+  const dir = join(dataDir(), 'characters')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+export function globalCharacterAbsPath(localPath: string): string {
+  return join(globalCharactersDir(), localPath)
+}
+
+export function globalCharacterUrl(localPath: string): string {
+  const rel = localPath.split(/[\\/]/).map(encodeURIComponent).join('/')
+  return `studio://character/${rel}`
+}
+
 export function projectDir(projectId: string): string {
   const dir = join(projectsRoot(), projectId)
   mkdirSync(dir, { recursive: true })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Film, Image as ImageIcon, Move, Users } from 'lucide-react'
+import { Film, Image as ImageIcon, Move, Sparkles, Users } from 'lucide-react'
 import { effectiveResolution, fitDuration, getImageModel, getVideoModel, hfModelOptions, maxRefs, resolutionOptions } from '@shared/higgsfield'
 import type { CreditEstimate, ModelOption, Project } from '@shared/types'
 import { ModelLogo } from '../../components/ModelLogo'
@@ -89,6 +89,26 @@ export function ModelSection({
     () => withCosts(VIDEO_OPTIONS, videoCosts, (id) => `${fitDuration(getVideoModel(id), perClip)} dtk`, hasKey === true),
     [videoCosts, perClip, hasKey]
   )
+
+  if (project.mediaProvider === 'google-flow') {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="text-sm font-semibold">Model AI</span>
+          <span className="text-[13px] text-muted">Google Flow via Flow MCP</span>
+        </div>
+        <div className="flex flex-col gap-2 rounded-2xl border border-line-2 bg-surface p-4">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="size-5 text-blue-600" />
+            <span className="font-bold text-sm text-ink">Google Flow (Veo 3.1 & Nano Banana)</span>
+          </div>
+          <p className="text-[13px] leading-relaxed text-ink-2">
+            Proyek ini menggunakan Google Flow melalui Flow MCP. Gambar klip dibuat dengan Nano Banana dan video dianimasikan dengan Veo 3.1 langsung melalui sesi browser Google akunmu.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-2">

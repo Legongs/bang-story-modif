@@ -7,16 +7,15 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Film,
+  FileText,
   FolderOpen,
-  Image as ImageIcon,
   Info,
   KeyRound,
   Mic,
   SlidersHorizontal,
-  Trash2
+  Trash2,
+  Users
 } from 'lucide-react'
-import { HF_IMAGE_MODELS, HF_VIDEO_MODELS } from '@shared/higgsfield'
 import { LANGUAGES, LLM_PROVIDERS } from '@shared/models'
 import type { ApiProvider, AppSettings, KeyStatus, KeyTestResult, LlmProvider, TtsProvider } from '@shared/types'
 import { Logo } from '../components/Logo'
@@ -24,13 +23,16 @@ import { ModelPicker } from '../components/ModelPicker'
 import { ProviderLogo, type ProviderLogoId } from '../components/ProviderLogo'
 import { Select } from '../components/Select'
 import { AboutSection } from './AboutSection'
+import { BrandSection } from './BrandSection'
+import { GlobalCharactersSection } from './GlobalCharactersSection'
+import { MediaSection } from './MediaSection'
 import { WhisperSection } from './WhisperSection'
 import { Badge, Button, Field, IconButton, confirmDialog, cx, inputCls } from '../components/ui'
 import { errorText, relativeTime } from '../lib/format'
 import { useModels } from '../lib/useModels'
 import { useApp } from '../store/app'
 
-type Tab = 'services' | 'general' | 'about'
+type Tab = 'services' | 'brand' | 'characters' | 'general' | 'about'
 
 interface ProviderOption<T extends string> {
   id: T
@@ -40,7 +42,7 @@ interface ProviderOption<T extends string> {
   status?: KeyStatus
 }
 
-function StatusBadge({ status }: { status?: KeyStatus }) {
+export function StatusBadge({ status }: { status?: KeyStatus }) {
   if (!status?.configured) return <Badge tone="draft">Belum diatur</Badge>
   if (status.lastOk === false) return <Badge tone="bad">Gagal terhubung</Badge>
   if (status.lastOk)
@@ -126,7 +128,7 @@ function ProviderSelect<T extends string>({ value, options, onChange }: { value:
 }
 
 /** API key field(s) with save, test and delete. The custom endpoint also takes a base URL. */
-function KeyForm({
+export function KeyForm({
   provider,
   name,
   status,
@@ -137,6 +139,7 @@ function KeyForm({
   link,
   linkLabel,
   customUrl,
+  nineRouterUrl,
   onChanged,
   onSaved
 }: {
@@ -150,16 +153,20 @@ function KeyForm({
   link: string | null
   linkLabel: string
   customUrl?: string
+  nineRouterUrl?: string
   onChanged: () => void
   onSaved?: (r: KeyTestResult) => void
 }) {
   const { toast } = useApp()
   const configured = !!status?.configured
   const isCustom = provider === 'custom'
+  const isNineRouter = provider === 'ninerouter'
+  const hasBaseUrl = isCustom || isNineRouter
+  const defaultUrl = isNineRouter ? (nineRouterUrl || 'http://localhost:20128/v1') : (customUrl ?? '')
   const preview = status?.preview ?? null
   const [editing, setEditing] = useState(!preview)
   const [key, setKey] = useState('')
-  const [url, setUrl] = useState(customUrl ?? '')
+  const [url, setUrl] = useState(defaultUrl)
   const [revealed, setRevealed] = useState<string | null>(null)
   const [showTyped, setShowTyped] = useState(false)
   const [busy, setBusy] = useState<'save' | 'test' | null>(null)
@@ -173,8 +180,12 @@ function KeyForm({
 
   // The stored key is shown masked; the custom endpoint keeps an editable (optional) key field.
   const showStored = !isCustom && !editing && !!preview
-  const urlChanged = isCustom && url.trim() !== (customUrl ?? '').trim()
-  const canSave = isCustom ? !!url.trim() && (urlChanged || !!key.trim() || !configured) : !showStored && !!key.trim()
+  const urlChanged = hasBaseUrl && url.trim() !== defaultUrl.trim()
+  const canSave = isCustom
+    ? !!url.trim() && (urlChanged || !!key.trim() || !configured)
+    : isNineRouter
+      ? (!showStored && !!key.trim()) || urlChanged
+      : !showStored && !!key.trim()
   // A pasted key only counts once it is saved; Enter saves it too.
   const unsaved = !isCustom && !showStored && !!key.trim() && busy !== 'save'
   const onEnter = (e: React.KeyboardEvent<HTMLInputElement>): void => {
@@ -186,7 +197,15 @@ function KeyForm({
   const save = async (): Promise<void> => {
     setBusy('save')
     try {
-      const r = isCustom ? await window.api.settings.setCustom(url, key) : await window.api.settings.setKey(provider, key)
+      let r: KeyTestResult
+      if (isNineRouter) {
+        await window.api.settings.set({ nineRouterBaseUrl: url.trim() || 'http://localhost:20128/v1' })
+        r = await window.api.settings.setKey('ninerouter', key)
+      } else if (isCustom) {
+        r = await window.api.settings.setCustom(url, key)
+      } else {
+        r = await window.api.settings.setKey(provider, key)
+      }
       toast(r.ok ? 'success' : 'error', `${name}: ${r.message}`)
       setKey('')
       setEditing(false)
@@ -235,13 +254,13 @@ function KeyForm({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-end gap-2">
-        {isCustom && (
-          <Field label="Alamat endpoint (base URL)" className="flex-[1.3]">
+        {hasBaseUrl && (
+          <Field label={isNineRouter ? 'Alamat endpoint 9Router (base URL)' : 'Alamat endpoint (base URL)'} className="flex-[1.3]">
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={onEnter}
-              placeholder="http://localhost:11434/v1"
+              placeholder={isNineRouter ? 'http://localhost:20128/v1' : 'http://localhost:11434/v1'}
               spellCheck={false}
               className={cx(inputCls, 'h-11 font-mono text-sm')}
             />
@@ -345,11 +364,11 @@ function KeyForm({
   )
 }
 
-function Card({ children }: { children: ReactNode }) {
+export function Card({ children }: { children: ReactNode }) {
   return <section className="flex flex-col gap-4 rounded-2xl border border-line bg-surface px-5 py-[18px]">{children}</section>
 }
 
-function SectionTitle({ icon, title, sub }: { icon: ReactNode; title: string; sub: ReactNode }) {
+export function SectionTitle({ icon, title, sub }: { icon: ReactNode; title: string; sub: ReactNode }) {
   return (
     <div className="mt-5 flex items-start gap-3">
       <span className="mt-1 text-ink">{icon}</span>
@@ -400,11 +419,18 @@ function LlmSection({ settings, statusOf, onChanged, onSettings }: { settings: A
           provider={provider}
           name={spec.name}
           status={status}
-          help={provider === 'custom' ? 'Contoh: http://localhost:11434/v1 untuk Ollama, http://localhost:1234/v1 untuk LM Studio, https://api.x.ai/v1 untuk Grok.' : 'Setelah kunci disimpan, daftar model diambil langsung dari penyedianya.'}
+          help={
+            provider === 'custom'
+              ? 'Contoh: http://localhost:11434/v1 untuk Ollama, http://localhost:1234/v1 untuk LM Studio, https://api.x.ai/v1 untuk Grok.'
+              : provider === 'ninerouter'
+                ? '9Router menghubungkan ke 60+ provider AI dengan fallback otomatis. Kunci API dari 9Router, default endpoint http://localhost:20128/v1.'
+                : 'Setelah kunci disimpan, daftar model diambil langsung dari penyedianya.'
+          }
           hint={provider === 'gemini' && settings.defaultTtsProvider === 'gemini' ? 'Kunci ini dipakai bersama untuk suara narator Gemini TTS.' : undefined}
           link={spec.link}
           linkLabel={spec.linkLabel}
           customUrl={settings.customBaseUrl}
+          nineRouterUrl={settings.nineRouterBaseUrl}
           onChanged={onChanged}
           onSaved={async (r) => {
             if (!r.ok) return
@@ -506,48 +532,6 @@ function TtsSection({ settings, statusOf, onChanged, onSettings }: { settings: A
   )
 }
 
-function HiggsfieldSection({ status, onChanged }: { status?: KeyStatus; onChanged: () => void }) {
-  return (
-    <>
-      <SectionTitle icon={<ImageIcon className="size-5" />} title="Gambar dan video" sub="Higgsfield membuat gambar klip, lembar karakter, dan video AI." />
-      <Card>
-        <div className="flex items-center gap-3">
-          <ProviderLogo id="higgsfield" />
-          <div className="flex flex-1 flex-col">
-            <span className="text-base font-bold">Higgsfield</span>
-            <span className="text-[13px] text-ink-2">GPT Image 2.5, Kling, Seedance, dan model lain dari akun Higgsfield kamu</span>
-          </div>
-          <StatusBadge status={status} />
-        </div>
-        <KeyForm
-          provider="higgsfield"
-          name="Higgsfield"
-          status={status}
-          placeholder="Tempel hasil tombol Copy API key"
-          hint={
-            <>
-              Di console Higgsfield, buka API Keys lalu klik <strong className="text-ink">Copy API key</strong> dan tempel di sini. Formatnya{' '}
-              <code className="rounded bg-sand px-1 font-mono text-xs">KEY_ID:KEY_SECRET</code>. Kalau kamu memegang Key ID dan Secret terpisah, gabungkan
-              dengan titik dua.
-            </>
-          }
-          help="Kunci dicek dengan permintaan estimasi biaya, tanpa memakai kredit."
-          link="https://higgsfield.ai/s/higgsfield-api-yt-bangtutorial-lPMrHK"
-          linkLabel="Buka console Higgsfield"
-          onChanged={onChanged}
-        />
-        <p className="flex items-start gap-2.5 border-t border-dashed border-line pt-4 text-[13px] leading-relaxed text-ink-2">
-          <Film className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Semua {HF_IMAGE_MODELS.length} model gambar dan {HF_VIDEO_MODELS.length} model video Higgsfield bisa dipakai. Modelnya dipilih per proyek
-            di langkah <strong className="text-ink">Ide cerita</strong>, bagian Model AI.
-          </span>
-        </p>
-      </Card>
-    </>
-  )
-}
-
 export function Settings() {
   const { go, route } = useApp()
   const back = route.name === 'settings' && route.back ? route.back : ({ name: 'home' } as const)
@@ -569,6 +553,8 @@ export function Settings() {
 
   const NAV: { id: Tab; label: string; icon: ReactNode }[] = [
     { id: 'services', label: 'Layanan AI dan kunci', icon: <KeyRound className="size-[18px]" /> },
+    { id: 'brand', label: 'Panduan Brand (brand.md)', icon: <FileText className="size-[18px]" /> },
+    { id: 'characters', label: 'Pemeran Tetap (Karakter)', icon: <Users className="size-[18px]" /> },
     { id: 'general', label: 'Umum', icon: <SlidersHorizontal className="size-[18px]" /> },
     { id: 'about', label: 'Tentang aplikasi', icon: <Info className="size-[18px]" /> }
   ]
@@ -617,10 +603,19 @@ export function Settings() {
                 </div>
                 <LlmSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
                 <TtsSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
-                <HiggsfieldSection status={statusOf('higgsfield')} onChanged={reload} />
+                <MediaSection settings={settings} statusOf={statusOf} onChanged={reload} onSettings={setSettings} />
                 <WhisperSection settings={settings} onSettings={setSettings} />
               </>
             )}
+
+            {tab === 'brand' && settings && (
+              <BrandSection
+                brandMarkdown={settings.brandMarkdown}
+                onSave={async (text) => setSettings(await window.api.settings.set({ brandMarkdown: text }))}
+              />
+            )}
+
+            {tab === 'characters' && <GlobalCharactersSection />}
 
             {tab === 'general' && settings && (
               <>

@@ -45,6 +45,9 @@ const api: StudioApi = {
     split: call('clips:split'),
     detachVoice: call('clips:detachVoice')
   },
+  characters: {
+    pickSheet: call('characters:pickSheet')
+  },
   assets: {
     setActive: call('assets:setActive'),
     setWords: call('assets:setWords'),
@@ -60,7 +63,15 @@ const api: StudioApi = {
     clearKey: call('settings:clearKey'),
     revealKey: call('settings:revealKey'),
     testKey: call('settings:testKey'),
-    voices: call('settings:voices')
+    voices: call('settings:voices'),
+    uploadBrand: call('settings:uploadBrand'),
+    testFlowMcp: call('settings:testFlowMcp'),
+    globalCharacters: {
+      list: call('settings:globalCharacters:list'),
+      save: call('settings:globalCharacters:save'),
+      remove: call('settings:globalCharacters:remove'),
+      pickImage: call('settings:globalCharacters:pickImage')
+    }
   },
   models: {
     list: call('models:list')

@@ -4,6 +4,7 @@ import { estimateNarrationMs, needsVisual } from '@shared/script'
 import { getStyle } from '@shared/styles'
 import type { CameraPresetId, Clip, MotionStrength, MusicPrompt, ProjectBundle, TransitionId } from '@shared/types'
 import { applyVisuals, charactersOf, clipsOf, getBundle, getProject, replaceScript, type SceneVisual } from './repo'
+import { getSettings } from './settings'
 import { generateJson } from './services/llm'
 
 const CAMERA_IDS = CAMERA_PRESETS.map((c) => c.id)
@@ -59,6 +60,8 @@ export async function generateScript(projectId: string): Promise<ProjectBundle> 
   if (!project.synopsis.trim()) throw new Error('Tulis ide cerita atau sinopsis dulu.')
   const lang = languageOf(project.language)
   const count = clipCountFor(project.durationSec)
+  const brand = getSettings().brandMarkdown.trim()
+  const brandRule = brand ? ` Strictly follow the brand guidelines (brand.md):\n${brand}\n` : ''
 
   const system = [
     'You are a scriptwriter for faceless YouTube storytelling and explainer videos.',
@@ -66,8 +69,9 @@ export async function generateScript(projectId: string): Promise<ProjectBundle> 
     'The first scene is a strong hook. The story has a clear beginning, rising tension and a satisfying ending. The last scene can invite viewers to subscribe.',
     'Keep facts accurate for history and science topics, and always call each character by the same name.',
     'The narration is voiced by an expressive text-to-speech model. Where it helps the delivery, add a few English vocal tags in angle brackets inside the narration, such as <short pause>, <long pause>, <chuckles>, <sigh>, <gasp> or <whispers>. Use them sparingly, at most one or two per scene, and never other markup.',
+    brandRule,
     `Write everything in ${lang}, except the vocal tags, which stay in English.`
-  ].join(' ')
+  ].filter(Boolean).join(' ')
   const prompt = [
     `Idea / synopsis:\n${project.synopsis}`,
     `Target video length: about ${project.durationSec} seconds.`,
@@ -270,15 +274,17 @@ export async function generateVisuals(projectId: string, mode: 'missing' | 'all'
   const script = clips
     .map((c, i) => `Scene ${i + 1}: ${c.title}\nStory: ${c.story || '(none)'}\nNarration (${languageOf(project.language)}): ${c.narration || '(none)'}`)
     .join('\n\n')
+  const brand = getSettings().brandMarkdown.trim()
   const prompt = [
     `Visual style of the video (for your framing choices only, do not repeat it in the descriptions): ${getStyle(project.styleId).name}.`,
     `Frame format: ${project.aspectRatio === '9:16' ? 'vertical 9:16' : 'horizontal 16:9'}.`,
     `Idea of the video: ${project.synopsis}`,
+    brand ? `Brand visual guidelines:\n${brand}` : '',
     known.length ? `Existing characters (keep them exactly):\n${known.map((c) => `- ${c.name}: ${c.description}`).join('\n')}` : 'There are no existing characters yet.',
     `Full script:\n${script}`,
     `Write visuals for these scenes only: ${targets.map((t) => t.n).join(', ')}.`,
     `Allowed camera values: ${CAMERA_IDS.join(', ')}. Allowed strength values: ${STRENGTH_IDS.join(', ')}. Allowed transition values: ${TRANSITION_IDS.join(', ')}.`
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 
   const plan = await generateJson<VisualPlan>({ system, prompt, schema: VISUAL_SCHEMA, name: 'visuals' })
   const answers = (plan.scenes ?? []).filter((s) => str(s.setting) || str(s.action))
@@ -353,12 +359,14 @@ export async function generateMusicPrompt(projectId: string): Promise<MusicPromp
   if (!clips.some((c) => c.narration.trim() || c.story.trim()) && !p.synopsis.trim()) throw new Error('Naskah masih kosong.')
   const durationSec = Math.max(10, Math.round(clips.reduce((n, c) => n + c.durationMs, 0) / 1000) || p.durationSec)
   const style = getStyle(p.styleId)
+  const brand = getSettings().brandMarkdown.trim()
   const system = [
     'You are a music supervisor for faceless YouTube storytelling videos.',
     'You pick background music that supports a voice-over without competing with it: instrumental, no vocals or choirs with words, clear space in the mid range where the voice sits.',
+    brand ? `Ensure the music mood, era, and tone strictly match the brand guidelines:\n${brand}` : '',
     'Match the setting and era of the story (for example gamelan or kendang colours for an old Javanese kingdom, orchestral for epic history, lo-fi for a calm explainer) and follow its emotional arc from the hook to the ending.',
     'Write the music fields in English, because music AIs understand English best. Never name real artists or copyrighted songs.'
-  ].join(' ')
+  ].filter(Boolean).join(' ')
   const scenes = clips
     .map((c, i) => `${i + 1}. ${c.title}: ${c.story || c.narration}`.slice(0, 260))
     .join('\n')

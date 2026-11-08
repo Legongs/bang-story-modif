@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { cpSync, existsSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { dirname, extname, join } from 'node:path'
 import type {
   Asset,
   AssetKind,
@@ -8,6 +8,7 @@ import type {
   Character,
   Clip,
   EditorSettings,
+  GlobalCharacter,
   Job,
   JobKind,
   JobStatus,
@@ -19,7 +20,7 @@ import type {
 } from '@shared/types'
 import { visualSourceOf } from '@shared/script'
 import { getDb } from './db'
-import { assetUrl, projectDir, projectsRoot } from './paths'
+import { assetAbsPath, assetUrl, globalCharacterAbsPath, globalCharacterUrl, projectDir, projectsRoot } from './paths'
 import { getSettings } from './settings'
 
 export const DEFAULT_EDITOR: EditorSettings = {
@@ -44,6 +45,7 @@ const toProject = (r: Row): Project => ({
   styleId: r.style_id,
   ttsProvider: r.tts_provider,
   ttsVoice: r.tts_voice,
+  mediaProvider: r.media_provider ?? 'higgsfield',
   imageModel: r.image_model,
   videoModel: r.video_model,
   videoResolution: r.video_resolution ?? null,
@@ -159,11 +161,12 @@ export function createProject(input: NewProjectInput): Project {
   const now = Date.now()
   const id = randomUUID()
   const tts = input.ttsProvider ?? s.defaultTtsProvider
+  const mediaProvider = input.mediaProvider ?? s.mediaProvider ?? 'higgsfield'
   getDb()
     .prepare(
       `INSERT INTO projects (id, title, synopsis, duration_sec, language, aspect_ratio, style_id, tts_provider, tts_voice,
-        image_model, video_model, status, step, editor_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?)`
+        media_provider, image_model, video_model, status, step, editor_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?)`
     )
     .run(
       id,
@@ -175,6 +178,7 @@ export function createProject(input: NewProjectInput): Project {
       input.styleId ?? 'stickman',
       tts,
       tts === 'gemini' ? 'Charon' : '',
+      mediaProvider,
       s.imageModel,
       s.videoModel,
       JSON.stringify(DEFAULT_EDITOR),
@@ -182,6 +186,41 @@ export function createProject(input: NewProjectInput): Project {
       now
     )
   projectDir(id)
+
+  // Attach default global characters so they are always included in every new video.
+  const defaultChars = listGlobalCharacters().filter((c) => c.isDefault)
+  let sort = 0
+  for (const gc of defaultChars) {
+    const charId = randomUUID()
+    let sheetAssetId: string | null = null
+    if (gc.imagePath) {
+      try {
+        const srcAbs = globalCharacterAbsPath(gc.imagePath)
+        if (existsSync(srcAbs)) {
+          const ext = extname(gc.imagePath).toLowerCase() || '.png'
+          const relAsset = `sheets/${randomUUID()}${ext}`
+          const destAbs = assetAbsPath(id, relAsset)
+          mkdirSync(dirname(destAbs), { recursive: true })
+          copyFileSync(srcAbs, destAbs)
+          const asset = insertAsset({
+            projectId: id,
+            characterId: charId,
+            kind: 'image',
+            provider: 'local',
+            prompt: `Global character: ${gc.name}`,
+            localPath: relAsset
+          })
+          sheetAssetId = asset.id
+        }
+      } catch (e) {
+        console.warn('[repo] Failed to copy global character sheet:', e)
+      }
+    }
+    getDb()
+      .prepare('INSERT INTO characters (id, project_id, name, description, sheet_asset_id, sort) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(charId, id, gc.name, gc.description, sheetAssetId, sort++)
+  }
+
   return getProject(id)
 }
 
@@ -226,9 +265,10 @@ export function saveSnapshot(snap: ProjectSnapshot): number {
     db.prepare(
       `UPDATE projects SET title = @title, synopsis = @synopsis, duration_sec = @durationSec, language = @language,
         aspect_ratio = @aspectRatio, style_id = @styleId, tts_provider = @ttsProvider, tts_voice = @ttsVoice,
+        media_provider = COALESCE(@mediaProvider, media_provider),
         image_model = @imageModel, video_model = @videoModel, video_resolution = @videoResolution, status = @status, step = @step, editor_json = @editor, updated_at = @now
        WHERE id = @id`
-    ).run({ ...p, editor: JSON.stringify(p.editor), now })
+    ).run({ ...p, mediaProvider: p.mediaProvider ?? null, editor: JSON.stringify(p.editor), now })
 
     const charIds = snap.characters.map((c) => c.id)
     db.prepare(
@@ -730,4 +770,61 @@ export function activeJobFor(target: { clipId?: string; characterId?: string }, 
     )
     .get(kind, target.clipId ?? target.characterId) as Row | undefined
   return r ? toJob(r) : null
+}
+
+// ---------- global characters library ----------
+
+const toGlobalCharacter = (r: Row): GlobalCharacter => ({
+  id: r.id,
+  name: r.name,
+  description: r.description ?? '',
+  imagePath: r.image_path ?? null,
+  imageUrl: r.image_path ? globalCharacterUrl(r.image_path) : null,
+  isDefault: !!r.is_default,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at
+})
+
+export function listGlobalCharacters(): GlobalCharacter[] {
+  const rows = getDb().prepare('SELECT * FROM global_characters ORDER BY created_at ASC').all() as Row[]
+  return rows.map(toGlobalCharacter)
+}
+
+export function getGlobalCharacter(id: string): GlobalCharacter | null {
+  const r = getDb().prepare('SELECT * FROM global_characters WHERE id = ?').get(id) as Row | undefined
+  return r ? toGlobalCharacter(r) : null
+}
+
+export function saveGlobalCharacter(char: { id?: string; name: string; description: string; isDefault?: boolean }): GlobalCharacter {
+  const now = Date.now()
+  const id = char.id ?? randomUUID()
+  const isDefault = char.isDefault !== undefined ? (char.isDefault ? 1 : 0) : 1
+  getDb()
+    .prepare(
+      `INSERT INTO global_characters (id, name, description, is_default, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, is_default = excluded.is_default, updated_at = excluded.updated_at`
+    )
+    .run(id, char.name.trim(), char.description.trim(), isDefault, now, now)
+  return getGlobalCharacter(id)!
+}
+
+export function setGlobalCharacterImage(id: string, imagePath: string | null): GlobalCharacter {
+  getDb()
+    .prepare('UPDATE global_characters SET image_path = ?, updated_at = ? WHERE id = ?')
+    .run(imagePath, Date.now(), id)
+  return getGlobalCharacter(id)!
+}
+
+export function removeGlobalCharacter(id: string): void {
+  const char = getGlobalCharacter(id)
+  if (char?.imagePath) {
+    try {
+      const p = globalCharacterAbsPath(char.imagePath)
+      if (existsSync(p)) rmSync(p, { force: true })
+    } catch (e) {
+      console.warn('[repo] Failed to delete global character image file:', e)
+    }
+  }
+  getDb().prepare('DELETE FROM global_characters WHERE id = ?').run(id)
 }

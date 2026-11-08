@@ -1,4 +1,4 @@
-import { Server } from 'lucide-react'
+import { Server, Sparkles } from 'lucide-react'
 import { cx } from './ui'
 
 /**
@@ -8,7 +8,7 @@ import { cx } from './ui'
 const FILES = import.meta.glob('../assets/providers/*.{svg,png}', { eager: true, import: 'default' }) as Record<string, string>
 const file = (name: string): string => FILES[`../assets/providers/${name}`]
 
-export type ProviderLogoId = 'gemini' | 'openrouter' | 'groq' | 'elevenlabs' | 'higgsfield' | 'custom'
+export type ProviderLogoId = 'gemini' | 'openrouter' | 'groq' | 'elevenlabs' | 'higgsfield' | 'ninerouter' | 'google-flow' | 'custom'
 
 const LOOK: Record<ProviderLogoId, { bg: string; src?: string; inset: number }> = {
   gemini: { bg: '#FFFFFF', src: 'gemini.svg', inset: 0.2 },
@@ -16,11 +16,13 @@ const LOOK: Record<ProviderLogoId, { bg: string; src?: string; inset: number }> 
   groq: { bg: '#F55036', src: 'groq.svg', inset: 0.2 },
   elevenlabs: { bg: '#000000', src: 'elevenlabs.svg', inset: 0.28 },
   higgsfield: { bg: '#D1FE17', src: 'higgsfield.png', inset: 0 },
+  ninerouter: { bg: '#0F172A', inset: 0.2 },
+  'google-flow': { bg: '#E8F0FE', inset: 0.2 },
   custom: { bg: '#F3EFE8', inset: 0.24 }
 }
 
 export function ProviderLogo({ id, size = 40, className }: { id: ProviderLogoId; size?: number; className?: string }) {
-  const look = LOOK[id]
+  const look = LOOK[id] ?? LOOK.custom
   const inner = Math.round(size * (1 - look.inset * 2))
   return (
     <span
@@ -30,6 +32,12 @@ export function ProviderLogo({ id, size = 40, className }: { id: ProviderLogoId;
     >
       {look.src ? (
         <img src={file(look.src)} alt="" draggable={false} style={{ width: inner, height: inner }} className="object-contain" />
+      ) : id === 'ninerouter' ? (
+        <span className="flex items-center justify-center font-black tracking-tighter text-blue-400" style={{ fontSize: Math.round(inner * 0.8) }}>
+          9R
+        </span>
+      ) : id === 'google-flow' ? (
+        <Sparkles style={{ width: inner, height: inner }} strokeWidth={2} className="text-blue-600" />
       ) : (
         <Server style={{ width: inner, height: inner }} strokeWidth={1.8} className="text-ink" />
       )}

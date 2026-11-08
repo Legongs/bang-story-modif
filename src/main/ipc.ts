@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import type {
@@ -31,7 +31,7 @@ import {
 import { cancelJob } from './jobs'
 import { generateNarration, syncCaptions } from './narration'
 import { cancelDownload, downloadModel, openModelFolder, removeModel, whisperStatus } from './whisper'
-import { assetAbsPath } from './paths'
+import { assetAbsPath, globalCharacterAbsPath, globalCharactersDir } from './paths'
 import { detachVoice, splitClip } from './editing'
 import { emit } from './events'
 import {
@@ -39,11 +39,18 @@ import {
   duplicateProject,
   getAsset,
   getBundle,
+  getCharacter,
+  getGlobalCharacter,
   getProject,
   insertAsset,
+  listGlobalCharacters,
   listProjects,
+  removeGlobalCharacter,
   removeProject,
+  saveGlobalCharacter,
   saveSnapshot,
+  setCharacterSheet,
+  setGlobalCharacterImage,
   updateAssetMeta
 } from './repo'
 import { clearSecret, keyStatuses, recordCheck, revealSecret, setSecret } from './secrets'
@@ -53,6 +60,7 @@ import * as eleven from './services/elevenlabs'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
 import * as llm from './services/llm'
+import { flowMcp } from './services/flowMcp'
 import { generateScript, generateVisuals, generateMusicPrompt } from './story'
 
 
@@ -221,6 +229,78 @@ export function registerIpc(): void {
   handle('settings:voices', async (provider: TtsProvider): Promise<VoiceOption[]> => {
     if (provider === 'gemini') return gemini.listVoices()
     return eleven.listVoices()
+  })
+
+  handle('characters:pickSheet', async (characterId: string) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = await dialog.showOpenDialog(win!, {
+      title: 'Pilih foto atau lembar karakter',
+      filters: [{ name: 'Gambar', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      properties: ['openFile']
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    const char = getCharacter(characterId)
+    const src = res.filePaths[0]
+    const ext = extname(src).toLowerCase() || '.png'
+    const rel = `sheets/${randomUUID()}${ext}`
+    const abs = assetAbsPath(char.projectId, rel)
+    mkdirSync(dirname(abs), { recursive: true })
+    copyFileSync(src, abs)
+    const size = await probeSize(abs).catch(() => null)
+    const asset = insertAsset({
+      projectId: char.projectId,
+      characterId: char.id,
+      kind: 'image',
+      provider: 'local',
+      prompt: `Foto karakter: ${char.name}`,
+      localPath: rel,
+      width: size?.width,
+      height: size?.height
+    })
+    setCharacterSheet(char.id, asset.id)
+    emit.character({ characterId: char.id, patch: { sheetAssetId: asset.id } })
+    emit.asset(asset)
+    return asset
+  })
+
+  handle('settings:uploadBrand', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = await dialog.showOpenDialog(win!, {
+      title: 'Pilih file panduan brand (brand.md)',
+      filters: [{ name: 'Markdown / Dokumen Teks', extensions: ['md', 'txt', 'markdown'] }],
+      properties: ['openFile']
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    const src = res.filePaths[0]
+    const content = readFileSync(src, 'utf8')
+    setSettings({ brandMarkdown: content })
+    return { name: basename(src), content }
+  })
+
+  handle('settings:testFlowMcp', () => flowMcp.testConnection())
+
+  handle('settings:globalCharacters:list', () => listGlobalCharacters())
+  handle('settings:globalCharacters:save', (char: { id?: string; name: string; description: string; isDefault?: boolean }) =>
+    saveGlobalCharacter(char)
+  )
+  handle('settings:globalCharacters:remove', (id: string) => removeGlobalCharacter(id))
+  handle('settings:globalCharacters:pickImage', async (id: string) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = await dialog.showOpenDialog(win!, {
+      title: 'Pilih foto atau lembar karakter tetap',
+      filters: [{ name: 'Gambar', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      properties: ['openFile']
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    const char = getGlobalCharacter(id)
+    if (!char) throw new Error('Karakter tidak ditemukan')
+    const src = res.filePaths[0]
+    const ext = extname(src).toLowerCase() || '.png'
+    const rel = `${randomUUID()}${ext}`
+    const dest = globalCharacterAbsPath(rel)
+    mkdirSync(globalCharactersDir(), { recursive: true })
+    copyFileSync(src, dest)
+    return setGlobalCharacterImage(id, rel)
   })
 
   handle('export:start', (projectId: string, opts: ExportOptions) => startExport(projectId, opts))

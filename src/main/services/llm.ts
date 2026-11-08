@@ -35,6 +35,10 @@ function compat(provider: CompatProvider, keyOverride?: string | null, baseOverr
     return { provider, base: 'https://openrouter.ai/api/v1', key, headers: { 'X-OpenRouter-Title': 'Bang Story', 'X-Title': 'Bang Story' } }
   }
   if (provider === 'groq') return { provider, base: 'https://api.groq.com/openai/v1', key, headers: {} }
+  if (provider === 'ninerouter') {
+    const base = (baseOverride ?? getSettings().nineRouterBaseUrl ?? 'http://localhost:20128/v1').trim().replace(/\/+$/, '')
+    return { provider, base: base || 'http://localhost:20128/v1', key, headers: { 'X-Title': 'Bang Story' } }
+  }
   const base = (baseOverride ?? getSettings().customBaseUrl).trim().replace(/\/+$/, '')
   if (!base) throw new LlmError('Alamat endpoint custom belum diisi. Buka Pengaturan untuk menambahkannya.')
   return { provider, base, key, headers: {} }
@@ -153,6 +157,34 @@ async function customModels(): Promise<ModelOption[]> {
     .map((m) => ({ id: m.id, name: m.id, description: m.owned_by ? `Pemilik: ${m.owned_by}` : undefined, tags: [] }))
 }
 
+async function nineRouterModels(): Promise<ModelOption[]> {
+  const c = compat('ninerouter')
+  try {
+    const r = await call<{ data?: { id: string; name?: string; description?: string; owned_by?: string }[]; models?: { id?: string; name?: string }[] }>(c, '/models')
+    const list = r.data ?? r.models ?? []
+    if (list.length > 0) {
+      return list
+        .map((m: any): ModelOption => ({
+          id: m.id ?? m.name ?? '',
+          name: m.name ?? m.id ?? '',
+          description: m.description ?? (m.owned_by ? `Penyedia: ${m.owned_by}` : undefined),
+          tags: ['9Router', 'JSON']
+        }))
+        .filter((m) => m.id)
+    }
+  } catch (e) {
+    console.warn('[ninerouter] /models fallback:', (e as Error).message)
+  }
+  return [
+    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', tags: ['Cepat', 'JSON'] },
+    { id: 'openai/gpt-4o', name: 'GPT-4o', tags: ['Pintar', 'JSON'] },
+    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', tags: ['Pintar', 'JSON'] },
+    { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', tags: ['Cepat', 'Gratis'] },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', tags: ['Open Source'] },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3', tags: ['Hemat', 'JSON'] }
+  ]
+}
+
 async function fetchModels(source: ModelSource): Promise<ModelOption[]> {
   switch (source) {
     case 'gemini':
@@ -165,13 +197,17 @@ async function fetchModels(source: ModelSource): Promise<ModelOption[]> {
       return openRouterModels()
     case 'groq':
       return groqModels()
+    case 'ninerouter':
+      return nineRouterModels()
     case 'custom':
       return customModels()
   }
 }
 
 function cacheKey(source: ModelSource): string {
-  return source === 'custom' ? `models:custom:${getSettings().customBaseUrl.trim()}` : `models:${source}`
+  if (source === 'custom') return `models:custom:${getSettings().customBaseUrl.trim()}`
+  if (source === 'ninerouter') return `models:ninerouter:${getSettings().nineRouterBaseUrl.trim()}`
+  return `models:${source}`
 }
 
 export async function listModels(source: ModelSource, refresh = false): Promise<ModelList> {
@@ -202,7 +238,7 @@ export async function testLlm(provider: LlmProvider, key?: string | null, baseUr
       return { ok: true, message: parts.join(' · ') }
     }
     // Groq and OpenAI-compatible servers have no key-info endpoint; listing models proves the key works.
-    const models = provider === 'groq' ? await groqModels() : await customModels()
+    const models = provider === 'groq' ? await groqModels() : provider === 'ninerouter' ? await nineRouterModels() : await customModels()
     return { ok: true, message: `Terhubung · ${models.length} model tersedia` }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

@@ -6,6 +6,7 @@ import type {
   CharacterPatchEvent,
   ClipPatchEvent,
   CreditEstimate,
+  GlobalCharacter,
   WhisperStatus,
   WordTiming,
   ExportOptions,
@@ -64,6 +65,10 @@ export interface StudioApi {
     /** Takes the voice off a clip. */
     detachVoice(clipId: string): Promise<void>
   }
+  characters: {
+    /** Picks a local reference image / character sheet from disk for a project character. */
+    pickSheet(characterId: string): Promise<Asset | null>
+  }
   assets: {
     setActive(clipId: string, assetId: string): Promise<void>
     /** Caption words of a voice clip, after the text was fixed by hand. */
@@ -84,6 +89,16 @@ export interface StudioApi {
     revealKey(provider: ApiProvider): Promise<string | null>
     testKey(provider: ApiProvider): Promise<KeyTestResult>
     voices(provider: TtsProvider): Promise<VoiceOption[]>
+    /** Lets the user pick a brand.md markdown file from disk, reading its content. */
+    uploadBrand(): Promise<{ name: string; content: string } | null>
+    /** Test connection to Google Flow MCP. */
+    testFlowMcp(): Promise<KeyTestResult>
+    globalCharacters: {
+      list(): Promise<GlobalCharacter[]>
+      save(char: { id?: string; name: string; description: string; isDefault?: boolean }): Promise<GlobalCharacter>
+      remove(id: string): Promise<void>
+      pickImage(id: string): Promise<GlobalCharacter | null>
+    }
   }
   models: {
     /** Live model list from the provider. Served from cache unless `refresh` is set or the cache is stale. */

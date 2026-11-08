@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RefreshCw, Sparkles, Trash2, UserPlus } from 'lucide-react'
+import { RefreshCw, Sparkles, Trash2, Upload, UserPlus } from 'lucide-react'
 import { Button, Field, Modal, Progress, confirmDialog, cx, inputCls } from '../../components/ui'
 import { errorText } from '../../lib/format'
 import { useApp } from '../../store/app'
@@ -99,6 +99,19 @@ function EditCharacter({ characterId, onClose }: { characterId: string | null; o
     }
   }
 
+  const upload = async (): Promise<void> => {
+    try {
+      await flush()
+      const asset = await window.api.characters.pickSheet(c.id)
+      if (asset) {
+        updateCharacter(c.id, { sheetAssetId: asset.id })
+        toast('info', 'Foto karakter berhasil diunggah')
+      }
+    } catch (e) {
+      toast('error', errorText(e))
+    }
+  }
+
   const remove = async (): Promise<void> => {
     const ok = await confirmDialog({
       title: `Hapus pemeran ${c.name}?`,
@@ -119,9 +132,14 @@ function EditCharacter({ characterId, onClose }: { characterId: string | null; o
         ) : running ? null : (
           <div className="flex size-full flex-col items-center justify-center gap-3 text-ink-2">
             <span className="text-sm">Belum ada lembar karakter</span>
-            <Button variant="accent" icon={<Sparkles className="size-4" />} disabled={running} onClick={() => void generate()}>
-              Buat lembar karakter
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="accent" icon={<Sparkles className="size-4" />} disabled={running} onClick={() => void generate()}>
+                Buat lembar karakter
+              </Button>
+              <Button icon={<Upload className="size-4" />} disabled={running} onClick={() => void upload()}>
+                Unggah foto
+              </Button>
+            </div>
           </div>
         )}
         {running && (
@@ -156,6 +174,9 @@ function EditCharacter({ characterId, onClose }: { characterId: string | null; o
           Hapus pemeran
         </Button>
         <div className="flex-1" />
+        <Button icon={<Upload className="size-4" />} disabled={running} onClick={() => void upload()}>
+          {sheet ? 'Ganti foto' : 'Unggah foto'}
+        </Button>
         {sheet && (
           <Button icon={<RefreshCw className="size-4" />} loading={running} onClick={() => void generate()}>
             Buat ulang lembar

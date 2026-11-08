@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, extname } from 'node:path'
 import { estimateWordTimings } from '@shared/captions'
 import { stripVoiceTags } from '@shared/speech'
 import { getImageModel, getVideoModel, imageBody, maxRefs, promptLimit, videoBody, type HfModel } from '@shared/higgsfield'
@@ -33,6 +33,7 @@ import { probeDurationMs, probeSize } from './services/audio'
 import * as eleven from './services/elevenlabs'
 import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
+import { flowMcp } from './services/flowMcp'
 import { downloadTo, sleep } from './services/http'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -51,6 +52,15 @@ function saveFile(projectId: string, folder: string, ext: string, bytes: Buffer)
   const abs = assetAbsPath(projectId, rel)
   mkdirSync(dirname(abs), { recursive: true })
   writeFileSync(abs, bytes)
+  return rel
+}
+
+function copyLocalFile(projectId: string, folder: string, srcPath: string): string {
+  const ext = extname(srcPath).toLowerCase() || '.png'
+  const rel = `${folder}/${randomUUID()}${ext}`
+  const abs = assetAbsPath(projectId, rel)
+  mkdirSync(dirname(abs), { recursive: true })
+  copyFileSync(srcPath, abs)
   return rel
 }
 
@@ -241,17 +251,66 @@ export function generateClipImage(clipId: string): Job {
   const existing = activeJobFor({ clipId }, 'image')
   if (existing) return existing
   const clip = getClip(clipId)
+  const project = getProject(clip.projectId)
+  const media = project.mediaProvider || getSettings().mediaProvider || 'higgsfield'
+
+  if (media === 'google-flow') {
+    const job = insertJob({ projectId: clip.projectId, clipId, kind: 'image', provider: 'google-flow' })
+    emit.job(job)
+    return runJob(job, 'google-flow', async (ctx) => {
+      const fresh = getClip(clipId)
+      const p = getProject(fresh.projectId)
+      const chars = charactersOf(p.id).filter((c) => fresh.characterIds.includes(c.id))
+      const charWithSheet = chars.find((c) => c.sheetAssetId)
+      const sheetAsset = charWithSheet?.sheetAssetId ? getAsset(charWithSheet.sheetAssetId) : null
+      const refPath = sheetAsset ? assetAbsPath(p.id, sheetAsset.localPath) : null
+      const prompt = clipPrompt(p, fresh, chars, chars.map((c) => c.name), 2500)
+
+      const genPath = await flowMcp.generateImage({
+        prompt,
+        aspectRatio: p.aspectRatio,
+        referencePath: refPath,
+        signal: ctx.signal,
+        onProgress: (prog, msg) => ctx.progress(prog, msg)
+      })
+
+      ctx.progress(0.9, 'Menyimpan gambar klip')
+      const rel = copyLocalFile(p.id, 'clips', genPath)
+      const abs = assetAbsPath(p.id, rel)
+      const size = await probeSize(abs).catch(() => ({ width: 1920, height: 1080 }))
+      const asset = insertAsset({
+        projectId: p.id,
+        clipId,
+        kind: 'image',
+        provider: 'google-flow',
+        model: 'Nano Banana',
+        prompt,
+        localPath: rel,
+        width: size?.width ?? 1920,
+        height: size?.height ?? 1080
+      })
+      patchClip(clipId, { imageAssetId: asset.id })
+      emit.clip({ clipId, patch: { imageAssetId: asset.id } })
+      if (!p.coverAssetId) {
+        getDb().prepare('UPDATE projects SET cover_asset_id = ? WHERE id = ?').run(asset.id, p.id)
+      }
+      touchProject(p.id)
+      emit.asset(asset)
+      return asset.id
+    })
+  }
+
   const job = insertJob({ projectId: clip.projectId, clipId, kind: 'image', provider: 'higgsfield' })
   return startHiggsfield(job, async (ctx) => {
     const fresh = getClip(clipId)
-    const project = getProject(fresh.projectId)
-    const model = getImageModel(project.imageModel)
-    const chars = charactersOf(project.id).filter((c) => fresh.characterIds.includes(c.id))
+    const p = getProject(fresh.projectId)
+    const model = getImageModel(p.imageModel)
+    const chars = charactersOf(p.id).filter((c) => fresh.characterIds.includes(c.id))
     const refs = await referenceUrls(model, chars, ctx.signal)
-    const prompt = clipPrompt(project, fresh, chars, refs.names, promptLimit(model))
+    const prompt = clipPrompt(p, fresh, chars, refs.names, promptLimit(model))
     return {
       endpoint: model.id,
-      body: imageBody(model, prompt, project.aspectRatio, refs.urls),
+      body: imageBody(model, prompt, p.aspectRatio, refs.urls),
       payload: { target: 'clip-image', model: model.id, prompt }
     }
   })
@@ -261,11 +320,49 @@ export function generateCharacterSheet(characterId: string): Job {
   const existing = activeJobFor({ characterId }, 'sheet')
   if (existing) return existing
   const c = getCharacter(characterId)
+  const project = getProject(c.projectId)
+  const media = project.mediaProvider || getSettings().mediaProvider || 'higgsfield'
+
+  if (media === 'google-flow') {
+    const job = insertJob({ projectId: c.projectId, characterId, kind: 'sheet', provider: 'google-flow' })
+    emit.job(job)
+    return runJob(job, 'google-flow', async (ctx) => {
+      const p = getProject(c.projectId)
+      const prompt = sheetPrompt(p, getCharacter(characterId))
+      const genPath = await flowMcp.generateImage({
+        prompt,
+        aspectRatio: '16:9',
+        signal: ctx.signal,
+        onProgress: (prog, msg) => ctx.progress(prog, msg)
+      })
+      ctx.progress(0.9, 'Menyimpan lembar karakter')
+      const rel = copyLocalFile(p.id, 'sheets', genPath)
+      const abs = assetAbsPath(p.id, rel)
+      const size = await probeSize(abs).catch(() => ({ width: 1920, height: 1080 }))
+      const asset = insertAsset({
+        projectId: p.id,
+        characterId,
+        kind: 'image',
+        provider: 'google-flow',
+        model: 'Nano Banana',
+        prompt,
+        localPath: rel,
+        width: size?.width ?? 1920,
+        height: size?.height ?? 1080
+      })
+      setCharacterSheet(characterId, asset.id)
+      emit.character({ characterId, patch: { sheetAssetId: asset.id } })
+      touchProject(p.id)
+      emit.asset(asset)
+      return asset.id
+    })
+  }
+
   const job = insertJob({ projectId: c.projectId, characterId, kind: 'sheet', provider: 'higgsfield' })
   return startHiggsfield(job, async () => {
-    const project = getProject(c.projectId)
-    const model = getImageModel(project.imageModel)
-    const prompt = sheetPrompt(project, getCharacter(characterId))
+    const p = getProject(c.projectId)
+    const model = getImageModel(p.imageModel)
+    const prompt = sheetPrompt(p, getCharacter(characterId))
     return {
       endpoint: model.id,
       body: imageBody(model, prompt, '16:9', []),
@@ -279,13 +376,63 @@ export function generateClipVideo(clipId: string): Job {
   if (existing) return existing
   const clip = getClip(clipId)
   if (!clip.imageAssetId) throw new Error('Buat gambar klip ini dulu sebelum membuat video AI.')
+  const project = getProject(clip.projectId)
+  const media = project.mediaProvider || getSettings().mediaProvider || 'higgsfield'
+
+  if (media === 'google-flow') {
+    const job = insertJob({ projectId: clip.projectId, clipId, kind: 'video', provider: 'google-flow' })
+    emit.job(job)
+    return runJob(job, 'google-flow', async (ctx) => {
+      const fresh = getClip(clipId)
+      const img = getAsset(fresh.imageAssetId)
+      if (!img) throw new Error('Gambar klip tidak ditemukan')
+      const p = getProject(fresh.projectId)
+      const firstFramePath = assetAbsPath(p.id, img.localPath)
+      const prompt =
+        fresh.videoPrompt.trim() ||
+        `${splitAvoid(fresh.visualPrompt).scene.replace(/\.$/, '')}. Subtle natural cinematic camera movement, high quality.`
+
+      const genPath = await flowMcp.generateVideo({
+        prompt,
+        firstFramePath,
+        durationSec: Math.round(fresh.durationMs / 1000) || 8,
+        aspectRatio: p.aspectRatio,
+        signal: ctx.signal,
+        onProgress: (prog, msg) => ctx.progress(prog, msg)
+      })
+
+      ctx.progress(0.9, 'Menyimpan video')
+      const rel = copyLocalFile(p.id, 'videos', genPath)
+      const abs = assetAbsPath(p.id, rel)
+      const dur = await probeDurationMs(abs).catch(() => fresh.durationMs)
+      const size = await probeSize(abs).catch(() => ({ width: 1920, height: 1080 }))
+      const asset = insertAsset({
+        projectId: p.id,
+        clipId,
+        kind: 'video',
+        provider: 'google-flow',
+        model: 'Veo 3.1',
+        prompt,
+        localPath: rel,
+        durationMs: dur,
+        width: size?.width ?? 1920,
+        height: size?.height ?? 1080
+      })
+      patchClip(clipId, { videoAssetId: asset.id, mediaInMs: 0 })
+      emit.clip({ clipId, patch: { videoAssetId: asset.id, mediaInMs: 0 } })
+      touchProject(p.id)
+      emit.asset(asset)
+      return asset.id
+    })
+  }
+
   const job = insertJob({ projectId: clip.projectId, clipId, kind: 'video', provider: 'higgsfield' })
   return startHiggsfield(job, async (ctx) => {
     const fresh = getClip(clipId)
     const image = getAsset(fresh.imageAssetId)
     if (!image) throw new Error('Gambar klip tidak ditemukan')
-    const project = getProject(fresh.projectId)
-    const model = getVideoModel(project.videoModel)
+    const p = getProject(fresh.projectId)
+    const model = getVideoModel(p.videoModel)
     ctx.progress(0.05, 'Menyiapkan gambar awal')
     const url = await publicUrlFor(image, ctx.signal)
     let prompt =
@@ -295,7 +442,7 @@ export function generateClipVideo(clipId: string): Job {
       prompt = `Open on the exact scene of the reference image and keep its art style, characters and composition. ${prompt}`
     return {
       endpoint: model.id,
-      body: videoBody(model, prompt, url, fresh.durationMs / 1000, project.aspectRatio, project.videoResolution),
+      body: videoBody(model, prompt, url, fresh.durationMs / 1000, p.aspectRatio, p.videoResolution),
       payload: { target: 'clip-video', model: model.id, prompt }
     }
   })

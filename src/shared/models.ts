@@ -23,6 +23,13 @@ export const LLM_PROVIDERS: { id: LlmProvider; name: string; note: string; link:
     linkLabel: 'Buat kunci di console Groq'
   },
   {
+    id: 'ninerouter',
+    name: '9Router',
+    note: 'AI router cerdas dengan auto-fallback ke 60+ penyedia LLM (OpenAI-compatible).',
+    link: 'https://9router.com',
+    linkLabel: 'Buka 9Router'
+  },
+  {
     id: 'custom',
     name: 'Endpoint custom',
     note: 'Server apa pun yang kompatibel dengan OpenAI API, misalnya Ollama, LM Studio, vLLM, DeepSeek, atau xAI Grok.',

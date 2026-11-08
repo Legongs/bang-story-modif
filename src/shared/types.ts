@@ -1,8 +1,9 @@
 export type ProjectStatus = 'draft' | 'script' | 'storyboard' | 'editing' | 'exported'
 export type AspectRatio = '16:9' | '9:16'
 export type TtsProvider = 'gemini' | 'elevenlabs'
-export type LlmProvider = 'gemini' | 'openrouter' | 'groq' | 'custom'
-export type ApiProvider = 'higgsfield' | 'gemini' | 'elevenlabs' | 'openrouter' | 'groq' | 'custom'
+export type LlmProvider = 'gemini' | 'openrouter' | 'groq' | 'ninerouter' | 'custom'
+export type ApiProvider = 'higgsfield' | 'gemini' | 'elevenlabs' | 'openrouter' | 'groq' | 'ninerouter' | 'custom'
+export type MediaProvider = 'higgsfield' | 'google-flow'
 /** Where a live model list comes from: an LLM provider, or a TTS catalog. */
 export type ModelSource = LlmProvider | 'gemini-tts' | 'elevenlabs'
 export type MotionType = 'camera' | 'video'
@@ -102,6 +103,8 @@ export interface Project {
   styleId: string
   ttsProvider: TtsProvider
   ttsVoice: string
+  /** Provider for clip images and videos ('higgsfield' or 'google-flow'). */
+  mediaProvider?: MediaProvider
   /** Higgsfield endpoint ids; null falls back to the app default. */
   imageModel: string | null
   videoModel: string | null
@@ -122,6 +125,17 @@ export interface Character {
   description: string
   sheetAssetId: string | null
   sort: number
+}
+
+export interface GlobalCharacter {
+  id: string
+  name: string
+  description: string
+  imagePath: string | null
+  imageUrl: string | null
+  isDefault: boolean
+  createdAt: number
+  updatedAt: number
 }
 
 export interface Clip {
@@ -249,6 +263,7 @@ export interface NewProjectInput {
   aspectRatio?: AspectRatio
   styleId?: string
   ttsProvider?: TtsProvider
+  mediaProvider?: MediaProvider
 }
 
 export interface KeyStatus {
@@ -285,6 +300,8 @@ export interface AppSettings {
   llmModels: Record<LlmProvider, string>
   /** Base URL of an OpenAI-compatible endpoint, e.g. http://localhost:11434/v1 */
   customBaseUrl: string
+  /** Base URL for 9Router, default http://localhost:20128/v1 */
+  nineRouterBaseUrl: string
   geminiTtsModel: string
   elevenModel: string
   /** Higgsfield models for new projects: the last ones picked in the Idea step. */
@@ -292,6 +309,12 @@ export interface AppSettings {
   videoModel: string
   /** Time captions against the real voice with Whisper after narration is made (when the model is present). */
   whisperAuto: boolean
+  /** Brand identity & guidelines markdown text (brand.md). */
+  brandMarkdown: string
+  /** Which provider creates clip images and videos: Higgsfield or Google Flow (via Flow MCP). */
+  mediaProvider: MediaProvider
+  /** Command or path to start/run Google Flow MCP, e.g. 'npx flow-mcp' */
+  flowMcpCommand: string
 }
 
 /** What one Higgsfield request would cost, from the API's estimate endpoint. */

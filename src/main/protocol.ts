@@ -2,7 +2,7 @@ import { createReadStream, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { protocol } from 'electron'
-import { fontsDir, projectsRoot } from './paths'
+import { fontsDir, globalCharactersDir, projectsRoot } from './paths'
 
 const TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -28,7 +28,14 @@ export function registerSchemes(): void {
 export function handleStudioProtocol(): void {
   protocol.handle('studio', (req) => {
     const url = new URL(req.url)
-    const root = url.hostname === 'fonts' ? fontsDir() : url.hostname === 'asset' ? projectsRoot() : null
+    const root =
+      url.hostname === 'fonts'
+        ? fontsDir()
+        : url.hostname === 'asset'
+          ? projectsRoot()
+          : url.hostname === 'character'
+            ? globalCharactersDir()
+            : null
     if (!root) return new Response('Not found', { status: 404 })
     const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '')
     const abs = normalize(join(root, rel))
