@@ -179,20 +179,16 @@ export function MediaSection({
               <Button className="h-11" loading={testingFlow} onClick={() => void saveFlowCmd()}>
                 Simpan & Uji
               </Button>
-              <Button variant="secondary" className="h-11" loading={testingFlow} onClick={() => void testFlow()}>
-                Uji Koneksi
-              </Button>
             </div>
             {flowStatus && (
-              <p className={cx('text-[13px]', flowStatus.ok ? 'text-ok-ink' : 'text-bad-ink')}>
+              <p className={cx('text-[13px] font-medium', flowStatus.ok ? 'text-ok-ink' : 'text-bad-ink')}>
                 {flowStatus.message}
               </p>
             )}
             <div className="rounded-xl bg-sand p-3.5 text-xs text-ink-2 leading-relaxed flex flex-col gap-1.5">
-              <p className="font-semibold text-ink">Langkah menghubungkan Google Flow:</p>
-              <p>1. Jalankan Flow MCP di komputermu (misalnya lewat <code className="bg-paper px-1 py-0.5 rounded font-mono">Flow Studio.cmd</code> dari repositori GTAI-1/flow-mcp, atau <code className="bg-paper px-1 py-0.5 rounded font-mono">npx flow-mcp</code>).</p>
-              <p>2. Pastikan sesi Chrome terbuka dan kamu sudah login ke akun Google Flow (flow.google.com).</p>
-              <p>3. Klik tombol &quot;Uji Koneksi&quot; di atas untuk memastikan Bang Story siap membuat gambar dan video melalui Google Flow.</p>
+              <p className="font-semibold text-ink">Catatan Google Flow MCP:</p>
+              <p>• Bang Story otomatis mendeteksi server Flow MCP lokal di komputer kamu (<code className="bg-paper px-1 py-0.5 rounded font-mono">mcp/google-flow-mcp</code>).</p>
+              <p>• Jika muncul notifikasi Chrome belum aktif, jalankan browser Flow atau pastikan akun Google Flow kamu (<code className="bg-paper px-1 py-0.5 rounded font-mono">mamijuicegroup@gmail.com</code>) sudah login di flow.google.com.</p>
             </div>
           </div>
         </Card>

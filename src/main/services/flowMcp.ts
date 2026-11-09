@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import type { AspectRatio, KeyTestResult } from '@shared/types'
 import { getSettings } from '../settings'
 import { sleep } from './http'
@@ -26,6 +26,8 @@ class FlowMcpClient {
   private pending = new Map<number | string, { resolve: (res: any) => void; reject: (err: any) => void }>()
   private lineBuffer = ''
   private initPromise: Promise<void> | null = null
+  private lastStderr = ''
+  private knownTools: string[] = []
 
   private get port(): number {
     return Number(process.env.FLOW_MCP_PORT) || DEFAULT_PORT
@@ -33,6 +35,19 @@ class FlowMcpClient {
 
   private get httpUrl(): string {
     return `http://127.0.0.1:${this.port}`
+  }
+
+  resetProcess(): void {
+    if (this.proc) {
+      try {
+        this.proc.kill()
+      } catch {}
+      this.proc = null
+    }
+    this.pending.clear()
+    this.lineBuffer = ''
+    this.initPromise = null
+    this.knownTools = []
   }
 
   /** Checks if the Flow MCP HTTP server is already running. */
@@ -59,16 +74,38 @@ class FlowMcpClient {
     return res.json()
   }
 
-  resetProcess(): void {
-    if (this.proc) {
-      try {
-        this.proc.kill()
-      } catch {}
-      this.proc = null
+  /** Resolves executable, arguments and working directory to avoid cmd.exe quoting bugs on Windows. */
+  private resolveSpawnParams(): { exec: string; args: string[]; cwd: string } {
+    const localGoogleFlowDir = join(homedir(), 'mcp', 'google-flow-mcp')
+    const localGoogleFlowJs = join(localGoogleFlowDir, 'src', 'index.js')
+    const localGtaiDir = join(homedir(), 'flow-mcp')
+    const localGtaiJs = join(localGtaiDir, 'src', 'index.js')
+
+    const rawCmd = getSettings().flowMcpCommand.trim()
+
+    // Priority 1: User explicitly points to a file or node command
+    if (rawCmd && !rawCmd.startsWith('npx')) {
+      const clean = rawCmd.replace(/^node\s+/i, '').replace(/^"|"$/g, '')
+      if (existsSync(clean)) {
+        return { exec: 'node', args: [clean], cwd: dirname(clean) }
+      }
     }
-    this.pending.clear()
-    this.lineBuffer = ''
-    this.initPromise = null
+
+    // Priority 2: Auto-detect installed google-flow-mcp or flow-mcp
+    if (existsSync(localGoogleFlowJs)) {
+      return { exec: 'node', args: [localGoogleFlowJs], cwd: localGoogleFlowDir }
+    }
+    if (existsSync(localGtaiJs)) {
+      return { exec: 'node', args: [localGtaiJs], cwd: localGtaiDir }
+    }
+
+    // Fallback: command string
+    const isWindows = process.platform === 'win32'
+    return {
+      exec: isWindows ? 'cmd.exe' : '/bin/sh',
+      args: [isWindows ? '/c' : '-c', rawCmd || 'npx flow-mcp'],
+      cwd: process.cwd()
+    }
   }
 
   /** Starts or connects to the stdio MCP process if not already running. */
@@ -77,30 +114,10 @@ class FlowMcpClient {
     if (this.initPromise) return this.initPromise
 
     this.initPromise = (async () => {
-      let cmdStr = getSettings().flowMcpCommand.trim()
-      const isWindows = process.platform === 'win32'
-      let cwd = process.cwd()
+      this.lastStderr = ''
+      const { exec, args, cwd } = this.resolveSpawnParams()
 
-      const localGoogleFlowDir = join(homedir(), 'mcp', 'google-flow-mcp')
-      const localGoogleFlowJs = join(localGoogleFlowDir, 'src', 'index.js')
-      const localGtaiDir = join(homedir(), 'flow-mcp')
-      const localGtaiJs = join(localGtaiDir, 'src', 'index.js')
-
-      if (!cmdStr || cmdStr === 'npx flow-mcp') {
-        if (existsSync(localGoogleFlowJs)) {
-          cmdStr = `node "${localGoogleFlowJs}"`
-          cwd = localGoogleFlowDir
-        } else if (existsSync(localGtaiJs)) {
-          cmdStr = `node "${localGtaiJs}"`
-          cwd = localGtaiDir
-        }
-      } else if (cmdStr.includes('google-flow-mcp') && existsSync(localGoogleFlowDir)) {
-        cwd = localGoogleFlowDir
-      } else if (cmdStr.includes('flow-mcp') && existsSync(localGtaiDir)) {
-        cwd = localGtaiDir
-      }
-
-      const child = spawn(isWindows ? 'cmd.exe' : '/bin/sh', [isWindows ? '/c' : '-c', cmdStr], {
+      const child = spawn(exec, args, {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, FLOW_MCP_PORT: String(this.port) },
@@ -125,27 +142,29 @@ class FlowMcpClient {
               if (msg.error) reject(new Error(msg.error.message || 'MCP Error'))
               else resolve(msg.result)
             }
-          } catch {
-            // Ignore non-json lines
-          }
+          } catch {}
         }
       })
 
       child.stderr?.setEncoding('utf8')
       child.stderr?.on('data', (errChunk: string) => {
-        console.warn('[flow-mcp:stderr]', errChunk.trim())
+        const text = errChunk.trim()
+        if (text) {
+          this.lastStderr = text
+          console.warn('[flow-mcp:stderr]', text)
+        }
       })
 
       child.on('error', (err) => {
-        console.warn('[flow-mcp:error]', err.message)
         this.proc = null
-        for (const [, p] of this.pending) p.reject(new Error(`Gagal menjalankan Flow MCP: ${err.message}. Periksa perintah di Pengaturan.`))
+        for (const [, p] of this.pending) p.reject(new Error(`Gagal menjalankan Flow MCP: ${err.message}`))
         this.pending.clear()
       })
 
-      child.on('exit', () => {
+      child.on('exit', (code) => {
         this.proc = null
-        for (const [, p] of this.pending) p.reject(new Error('Flow MCP process exited'))
+        const reason = this.lastStderr ? `: ${this.lastStderr}` : code ? ` (kode keluar ${code})` : ''
+        for (const [, p] of this.pending) p.reject(new Error(`Flow MCP process exited${reason}`))
         this.pending.clear()
       })
 
@@ -156,6 +175,8 @@ class FlowMcpClient {
           clientInfo: { name: 'bang-story', version: '1.0.0' }
         })
         this.sendNotification('notifications/initialized')
+        const listRes = await this.sendRpc<{ tools?: Array<{ name: string }> }>('tools/list', {}).catch(() => null)
+        this.knownTools = (listRes?.tools ?? []).map((t) => t.name)
       } catch (e) {
         this.proc?.kill()
         this.proc = null
@@ -225,15 +246,15 @@ class FlowMcpClient {
       const account = status.account || status.expectedAccount
       const parts = ['Terhubung ke Flow MCP']
       if (account) parts.push(`Akun: ${account}`)
-      if (status.credits != null) parts.push(`${status.credits} kredit tersisa`)
-      else if (status.browser === false) parts.push('Chrome siap diluncurkan')
+      if (status.credits != null) parts.push(`${status.credits} kredit`)
+      else if (status.browser === false) parts.push('Chrome siap (otomatis terbuka saat generate)')
       else if (status.flowAccessible) parts.push('Flow siap')
       return { ok: true, message: parts.join(' · ') }
     } catch (e) {
       const msg = (e as Error).message
       return {
         ok: false,
-        message: `Gagal terhubung ke Flow MCP: ${msg}. Periksa perintah atau path file Flow MCP.`
+        message: `Gagal terhubung ke Flow MCP: ${msg}`
       }
     }
   }
@@ -281,7 +302,7 @@ class FlowMcpClient {
     throw new Error('Dibatalkan')
   }
 
-  /** Generates an image via Google Flow. */
+  /** Generates an image via Google Flow. Supports both google-flow-mcp and GTAI-1/flow-mcp. */
   async generateImage(opts: {
     prompt: string
     aspectRatio?: AspectRatio
@@ -289,31 +310,56 @@ class FlowMcpClient {
     signal?: AbortSignal
     onProgress?: (progress: number, message: string) => void
   }): Promise<string> {
-    opts.onProgress?.(0.1, 'Mengirim permintaan gambar ke Google Flow…')
+    opts.onProgress?.(0.1, 'Menyiapkan permintaan gambar ke Google Flow…')
+    await this.ensureStdio()
+
+    const ratio = opts.aspectRatio === '9:16' ? '9:16' : '16:9'
+    const hasImageTool = this.knownTools.includes('flow_generate_image')
+
+    // Branch A: google-flow-mcp (Direct CDP)
+    if (hasImageTool) {
+      opts.onProgress?.(0.2, 'Mengirim ke Nano Banana / Flow…')
+      const args: Record<string, unknown> = {
+        prompt: opts.prompt,
+        ratio,
+        auto_confirm: true,
+        model: 'Nano Banana 2'
+      }
+      if (opts.referencePath && existsSync(opts.referencePath)) {
+        args.reference_images = [resolve(opts.referencePath)]
+      }
+      const res = await this.callTool('flow_generate_image', args)
+      if (res?.error) throw new Error(res.error)
+      const artifact = res?.artifacts?.[0]?.path || res?.files?.[0]
+      if (artifact && existsSync(artifact)) return artifact
+      if (res?.screenshot && existsSync(res.screenshot)) return res.screenshot
+      throw new Error(res?.message || 'Gagal mengunduh gambar hasil dari Google Flow')
+    }
+
+    // Branch B: GTAI-1/flow-mcp
     const args: Record<string, unknown> = {
       prompt: opts.prompt,
       type: 'image',
-      aspect_ratio: opts.aspectRatio === '9:16' ? '9:16' : '16:9'
+      aspect_ratio: ratio
     }
-
     if (opts.referencePath && existsSync(opts.referencePath)) {
       args.reference_images = [resolve(opts.referencePath)]
     }
 
     const genRes = await this.callTool('flow_generate', args)
-    if (genRes.error) throw new Error(genRes.error)
+    if (genRes?.error) throw new Error(genRes.error)
 
-    const jobs = Array.isArray(genRes.jobs) ? genRes.jobs : []
+    const jobs = Array.isArray(genRes?.jobs) ? genRes.jobs : []
     const job = jobs[0]
-    const outputDir = genRes.output_dir || (job?.file_stem ? resolve(OUTPUT_ROOT) : OUTPUT_ROOT)
+    const outputDir = genRes?.output_dir || (job?.file_stem ? resolve(OUTPUT_ROOT) : OUTPUT_ROOT)
 
     if (job?.file && existsSync(job.file)) return job.file
     if (job?.job_id) {
       return this.waitForJob(job.job_id, outputDir, opts.signal, opts.onProgress)
     }
 
-    if (genRes.file && existsSync(genRes.file)) return genRes.file
-    throw new Error('Google Flow tidak mengembalikan ID pekerjaan')
+    if (genRes?.file && existsSync(genRes.file)) return genRes.file
+    throw new Error('Google Flow tidak mengembalikan hasil gambar')
   }
 
   /** Generates an AI video via Google Flow (Veo / Omni Flash). */
@@ -325,7 +371,31 @@ class FlowMcpClient {
     signal?: AbortSignal
     onProgress?: (progress: number, message: string) => void
   }): Promise<string> {
-    opts.onProgress?.(0.1, 'Mengirim permintaan video ke Google Flow (Veo)…')
+    opts.onProgress?.(0.1, 'Menyiapkan permintaan video ke Google Flow (Veo)…')
+    await this.ensureStdio()
+
+    const ratio = opts.aspectRatio === '9:16' ? '9:16' : '16:9'
+    const hasVideoTool = this.knownTools.includes('flow_generate_video')
+
+    // Branch A: google-flow-mcp
+    if (hasVideoTool) {
+      opts.onProgress?.(0.2, 'Mengirim ke Veo 3.1 / Flow…')
+      const dur = opts.durationSec && opts.durationSec <= 4 ? '4s' : opts.durationSec && opts.durationSec <= 6 ? '6s' : '8s'
+      const args: Record<string, unknown> = {
+        prompt: opts.prompt,
+        ratio,
+        duration: dur,
+        model: 'Veo 3.1 - Fast',
+        auto_confirm: true
+      }
+      const res = await this.callTool('flow_generate_video', args)
+      if (res?.error) throw new Error(res.error)
+      const artifact = res?.artifacts?.[0]?.path || res?.files?.[0] || res?.video
+      if (artifact && existsSync(artifact)) return artifact
+      throw new Error(res?.message || 'Gagal mengunduh video hasil dari Google Flow')
+    }
+
+    // Branch B: GTAI-1/flow-mcp
     const validDurations = [4, 6, 8, 10]
     const durSec = opts.durationSec != null ? validDurations.find((d) => d >= (opts.durationSec as number)) ?? 8 : 8
 
@@ -333,27 +403,26 @@ class FlowMcpClient {
       prompt: opts.prompt,
       type: 'video',
       duration: durSec,
-      aspect_ratio: opts.aspectRatio === '9:16' ? '9:16' : '16:9'
+      aspect_ratio: ratio
     }
-
     if (opts.firstFramePath && existsSync(opts.firstFramePath)) {
       args.first_frame = resolve(opts.firstFramePath)
     }
 
     const genRes = await this.callTool('flow_generate', args)
-    if (genRes.error) throw new Error(genRes.error)
+    if (genRes?.error) throw new Error(genRes.error)
 
-    const jobs = Array.isArray(genRes.jobs) ? genRes.jobs : []
+    const jobs = Array.isArray(genRes?.jobs) ? genRes.jobs : []
     const job = jobs[0]
-    const outputDir = genRes.output_dir || (job?.file_stem ? resolve(OUTPUT_ROOT) : OUTPUT_ROOT)
+    const outputDir = genRes?.output_dir || (job?.file_stem ? resolve(OUTPUT_ROOT) : OUTPUT_ROOT)
 
     if (job?.file && existsSync(job.file)) return job.file
     if (job?.job_id) {
       return this.waitForJob(job.job_id, outputDir, opts.signal, opts.onProgress)
     }
 
-    if (genRes.file && existsSync(genRes.file)) return genRes.file
-    throw new Error('Google Flow tidak mengembalikan ID video')
+    if (genRes?.file && existsSync(genRes.file)) return genRes.file
+    throw new Error('Google Flow tidak mengembalikan hasil video')
   }
 }
 
