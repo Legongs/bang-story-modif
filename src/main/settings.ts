@@ -1,7 +1,18 @@
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { MASTER_BRAND_MANUAL } from '@shared/brandManual'
 import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, getImageModel, getVideoModel } from '@shared/higgsfield'
 import type { AppSettings } from '@shared/types'
 import { getDb } from './db'
+
+export function defaultFlowMcpCmd(): string {
+  const localGoogleFlow = join(homedir(), 'mcp', 'google-flow-mcp', 'src', 'index.js')
+  if (existsSync(localGoogleFlow)) return `node "${localGoogleFlow}"`
+  const localGtai = join(homedir(), 'flow-mcp', 'src', 'index.js')
+  if (existsSync(localGtai)) return `node "${localGtai}"`
+  return 'npx flow-mcp'
+}
 
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultTtsProvider: 'gemini',
@@ -18,7 +29,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   whisperAuto: true,
   brandMarkdown: MASTER_BRAND_MANUAL,
   mediaProvider: 'higgsfield',
-  flowMcpCommand: 'npx flow-mcp'
+  flowMcpCommand: defaultFlowMcpCmd()
 }
 
 export function getSettings(): AppSettings {
@@ -29,6 +40,10 @@ export function getSettings(): AppSettings {
     const value = JSON.parse(r.value)
     if (r.key === 'llmModels') out.llmModels = { ...out.llmModels, ...value }
     else (out as unknown as Record<string, unknown>)[r.key] = value
+  }
+  // If set to npx flow-mcp but local server is found, auto-upgrade
+  if ((!out.flowMcpCommand || out.flowMcpCommand === 'npx flow-mcp') && defaultFlowMcpCmd() !== 'npx flow-mcp') {
+    out.flowMcpCommand = defaultFlowMcpCmd()
   }
   // A provider that no longer exists (e.g. from an older build) falls back to Gemini.
   if (!(out.llmProvider in DEFAULT_SETTINGS.llmModels)) out.llmProvider = 'gemini'

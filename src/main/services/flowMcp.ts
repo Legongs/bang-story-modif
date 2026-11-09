@@ -59,16 +59,49 @@ class FlowMcpClient {
     return res.json()
   }
 
+  resetProcess(): void {
+    if (this.proc) {
+      try {
+        this.proc.kill()
+      } catch {}
+      this.proc = null
+    }
+    this.pending.clear()
+    this.lineBuffer = ''
+    this.initPromise = null
+  }
+
   /** Starts or connects to the stdio MCP process if not already running. */
   private async ensureStdio(): Promise<void> {
     if (this.proc && !this.proc.killed) return
     if (this.initPromise) return this.initPromise
 
     this.initPromise = (async () => {
-      const cmdStr = getSettings().flowMcpCommand.trim() || 'npx flow-mcp'
+      let cmdStr = getSettings().flowMcpCommand.trim()
       const isWindows = process.platform === 'win32'
+      let cwd = process.cwd()
+
+      const localGoogleFlowDir = join(homedir(), 'mcp', 'google-flow-mcp')
+      const localGoogleFlowJs = join(localGoogleFlowDir, 'src', 'index.js')
+      const localGtaiDir = join(homedir(), 'flow-mcp')
+      const localGtaiJs = join(localGtaiDir, 'src', 'index.js')
+
+      if (!cmdStr || cmdStr === 'npx flow-mcp') {
+        if (existsSync(localGoogleFlowJs)) {
+          cmdStr = `node "${localGoogleFlowJs}"`
+          cwd = localGoogleFlowDir
+        } else if (existsSync(localGtaiJs)) {
+          cmdStr = `node "${localGtaiJs}"`
+          cwd = localGtaiDir
+        }
+      } else if (cmdStr.includes('google-flow-mcp') && existsSync(localGoogleFlowDir)) {
+        cwd = localGoogleFlowDir
+      } else if (cmdStr.includes('flow-mcp') && existsSync(localGtaiDir)) {
+        cwd = localGtaiDir
+      }
 
       const child = spawn(isWindows ? 'cmd.exe' : '/bin/sh', [isWindows ? '/c' : '-c', cmdStr], {
+        cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, FLOW_MCP_PORT: String(this.port) },
         windowsHide: true
@@ -186,24 +219,21 @@ class FlowMcpClient {
   }
   /** Tests connection to Google Flow via Flow MCP. */
   async testConnection(): Promise<KeyTestResult> {
+    this.resetProcess()
     try {
       const status = await this.callTool('flow_status')
-      const loggedIn = status.logged_in !== undefined ? !!status.logged_in : status.account != null
-      if (!loggedIn) {
-        return {
-          ok: false,
-          message: 'Google Flow belum login di Chrome. Buka Chrome flow-mcp dan masuk dengan akun Google kamu.'
-        }
-      }
-      const parts = ['Terhubung ke Google Flow']
-      if (status.account) parts.push(status.account)
+      const account = status.account || status.expectedAccount
+      const parts = ['Terhubung ke Flow MCP']
+      if (account) parts.push(`Akun: ${account}`)
       if (status.credits != null) parts.push(`${status.credits} kredit tersisa`)
+      else if (status.browser === false) parts.push('Chrome siap diluncurkan')
+      else if (status.flowAccessible) parts.push('Flow siap')
       return { ok: true, message: parts.join(' · ') }
     } catch (e) {
       const msg = (e as Error).message
       return {
         ok: false,
-        message: `Gagal terhubung ke Flow MCP: ${msg}. Pastikan Flow MCP sudah berjalan dan Chrome sudah login ke flow.google.com.`
+        message: `Gagal terhubung ke Flow MCP: ${msg}. Periksa perintah atau path file Flow MCP.`
       }
     }
   }

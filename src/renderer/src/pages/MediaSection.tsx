@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Film } from 'lucide-react'
 import { HF_IMAGE_MODELS, HF_VIDEO_MODELS } from '@shared/higgsfield'
 import type { ApiProvider, AppSettings, KeyStatus, KeyTestResult } from '@shared/types'
@@ -43,13 +43,25 @@ export function MediaSection({
 
   const saveFlowCmd = async (): Promise<void> => {
     try {
-      const s = await window.api.settings.set({ flowMcpCommand: flowCmd.trim() || 'npx flow-mcp' })
+      const cleanCmd = flowCmd.trim()
+      const s = await window.api.settings.set({ flowMcpCommand: cleanCmd })
       onSettings(s)
-      toast('success', 'Perintah Flow MCP disimpan')
+      toast('info', 'Menyimpan & menguji koneksi Flow MCP…')
+      await testFlow()
     } catch (e) {
       toast('error', errorText(e))
     }
   }
+
+  useEffect(() => {
+    if (settings.flowMcpCommand) setFlowCmd(settings.flowMcpCommand)
+  }, [settings.flowMcpCommand])
+
+  useEffect(() => {
+    if (provider === 'google-flow' && !flowStatus && !testingFlow) {
+      void testFlow()
+    }
+  }, [provider])
 
   return (
     <>
@@ -153,18 +165,21 @@ export function MediaSection({
           </div>
           <div className="flex flex-col gap-3 border-t border-dashed border-line pt-3">
             <div className="flex items-end gap-2">
-              <Field label="Perintah Flow MCP (GTAI-1/flow-mcp)" className="flex-1">
+              <Field label="Perintah Flow MCP (Node script atau GTAI-1/flow-mcp)" className="flex-1">
                 <input
                   value={flowCmd}
                   onChange={(e) => setFlowCmd(e.target.value)}
-                  placeholder="npx flow-mcp atau node path/to/src/index.js"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void saveFlowCmd()
+                  }}
+                  placeholder='Contoh: node "C:\Users\...\mcp\google-flow-mcp\src\index.js"'
                   className={cx(inputCls, 'h-11 font-mono text-sm')}
                 />
               </Field>
-              <Button className="h-11" onClick={() => void saveFlowCmd()}>
-                Simpan
+              <Button className="h-11" loading={testingFlow} onClick={() => void saveFlowCmd()}>
+                Simpan & Uji
               </Button>
-              <Button variant="accent" className="h-11" loading={testingFlow} onClick={() => void testFlow()}>
+              <Button variant="secondary" className="h-11" loading={testingFlow} onClick={() => void testFlow()}>
                 Uji Koneksi
               </Button>
             </div>
