@@ -61,7 +61,7 @@ import * as gemini from './services/gemini'
 import * as hf from './services/higgsfield'
 import * as llm from './services/llm'
 import { flowMcp } from './services/flowMcp'
-import { generateScript, generateVisuals, generateMusicPrompt } from './story'
+import { generateScript, generateVisuals, generateMusicPrompt, generateRepurposedShorts, createProjectFromShort } from './story'
 
 
 type Handler = (...args: any[]) => unknown
@@ -117,6 +117,8 @@ export function registerIpc(): void {
   handle('story:script', (projectId: string) => generateScript(projectId))
   handle('story:musicPrompt', (projectId: string) => generateMusicPrompt(projectId))
   handle('story:visuals', (projectId: string, mode: 'missing' | 'all') => generateVisuals(projectId, mode === 'all' ? 'all' : 'missing'))
+  handle('story:repurposeShorts', (projectId: string) => generateRepurposedShorts(projectId))
+  handle('story:createShortProject', (projectId: string, shortId: string) => createProjectFromShort(projectId, shortId))
 
   handle('generate:clipImage', (clipId: string) => generateClipImage(clipId))
   handle('generate:clipVideo', (clipId: string) => generateClipVideo(clipId))

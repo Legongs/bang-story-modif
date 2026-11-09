@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto'
 import { CAMERA_PRESETS, MOTION_STRENGTHS, TRANSITIONS } from '@shared/motion'
 import { LANGUAGES, clipCountFor } from '@shared/models'
 import { estimateNarrationMs, needsVisual } from '@shared/script'
 import { getStyle } from '@shared/styles'
-import type { CameraPresetId, Clip, MotionStrength, MusicPrompt, ProjectBundle, TransitionId } from '@shared/types'
-import { applyVisuals, charactersOf, clipsOf, getBundle, getProject, replaceScript, type SceneVisual } from './repo'
+import type { CameraPresetId, Clip, MotionStrength, MusicPrompt, ProjectBundle, TransitionId, RepurposedShort } from '@shared/types'
+import { applyVisuals, charactersOf, clipsOf, createProject, getBundle, getProject, replaceScript, updateProjectEditor, type SceneVisual } from './repo'
 import { getSettings } from './settings'
 import { generateJson } from './services/llm'
 
@@ -99,6 +100,16 @@ export async function generateScript(projectId: string): Promise<ProjectBundle> 
       durationMs: estimateNarrationMs(str(c.narration))
     }))
   )
+
+  // Auto-repurpose 3 YouTube Shorts for long-form / Everyday Empire projects
+  if (project.durationSec >= 450 || brand.includes('Everyday Empire') || project.styleId === 'everyday_empire') {
+    try {
+      await generateRepurposedShorts(projectId)
+    } catch (e) {
+      console.warn('[story] Auto-repurposing shorts warning:', e)
+    }
+  }
+
   return getBundle(projectId)
 }
 
@@ -398,3 +409,170 @@ export async function generateMusicPrompt(projectId: string): Promise<MusicPromp
   if (!out.style && !out.description) throw new Error('Model tidak menghasilkan prompt musik. Coba lagi.')
   return out
 }
+
+// ---------- Long-to-Shorts Auto-Repurposing Engine ----------
+
+const REPURPOSE_SHORTS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    shorts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          shortId: { type: 'string' },
+          angle: {
+            type: 'string',
+            enum: ['THE_HIDDEN_MECHANISM', 'THE_SECRET_MONOPOLY', 'THE_BUTTERFLY_EFFECT']
+          },
+          title: { type: 'string' },
+          targetDurationSec: { type: 'integer' },
+          linkedLongVideoCTA: { type: 'string' },
+          segments: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                phase: {
+                  type: 'string',
+                  enum: ['HOOK_0_4S', 'CORE_MECHANISM_4_35S', 'BRIDGE_LOOP_35_48S']
+                },
+                durationSec: { type: 'integer' },
+                narrationText: { type: 'string' },
+                joke: { type: 'boolean' },
+                diegeticText: { type: 'string' },
+                gulliverPose: {
+                  type: 'string',
+                  enum: ['inspecting', 'shocked', 'pointing', 'calculating', 'saluting']
+                }
+              },
+              required: ['phase', 'durationSec', 'narrationText', 'joke', 'diegeticText', 'gulliverPose']
+            }
+          }
+        },
+        required: ['shortId', 'angle', 'title', 'targetDurationSec', 'linkedLongVideoCTA', 'segments']
+      }
+    }
+  },
+  required: ['shorts']
+}
+
+export async function generateRepurposedShorts(projectId: string): Promise<RepurposedShort[]> {
+  const b = getBundle(projectId)
+  const p = b.project
+  const clips = b.clips
+  const scenesText = clips.map((c, i) => `Scene ${i + 1} (${c.title}): ${c.narration || c.story}`).join('\n')
+
+  const system = [
+    'You are the Master Auto-Repurposing Engine for "The Economic Everyday Empire".',
+    'From the provided long-form investigative script, extract exactly 3 YouTube Shorts according to the Single Source of Truth architecture:',
+    '1. Short #1 (THE_HIDDEN_MECHANISM): Extract the single craziest engineering or physics mechanism from Act 2.',
+    '2. Short #2 (THE_SECRET_MONOPOLY): Extract the shadowy monopoly / giant company controlling 50% to 90% of the world from Act 3.',
+    '3. Short #3 (THE_BUTTERFLY_EFFECT): Extract the origin paradox or the catastrophic supply chain collapse if the object stopped for 48 hours from Act 1 & 4.',
+    'Each Short must be strictly 38 to 50 seconds in length and contain exactly 3 segments in sequence:',
+    '- HOOK_0_4S: 0-4 seconds. Instant pattern interrupt or bizarre contrasting number. Absolutely no hello or greeting.',
+    '- CORE_MECHANISM_4_35S: 4-35 seconds. Super dense, fast-paced technical or business revelation. Include a physical diegetic text phrase (e.g. "50% MARKET SHARE", "30 DEGREE ANGLE"). Set joke to true if there is a sharp funny punchline or shocking stat.',
+    '- BRIDGE_LOOP_35_48S: 35-48 seconds. Cliffhanger CTA pointing to the related video button below. The very last words of this segment MUST seamlessly loop back grammatically to the first word of the 0-4s hook!',
+    'Write narration in energetic, intelligent, fast-paced English (165-180 WPM).'
+  ].join(' ')
+
+  const prompt = [
+    `Video topic: ${p.title || p.synopsis}`,
+    `Long-form script scenes:\n${scenesText}`
+  ].join('\n\n')
+
+  const res = await generateJson<{ shorts?: Array<any> }>({
+    system,
+    prompt,
+    schema: REPURPOSE_SHORTS_SCHEMA,
+    name: 'auto_generated_shorts'
+  })
+
+  const rawShorts = res.shorts ?? []
+  const outShorts: RepurposedShort[] = rawShorts.slice(0, 3).map((s, idx) => {
+    const angle = s.angle ?? (idx === 0 ? 'THE_HIDDEN_MECHANISM' : idx === 1 ? 'THE_SECRET_MONOPOLY' : 'THE_BUTTERFLY_EFFECT')
+    return {
+      shortId: s.shortId || `short_${idx + 1}_${angle.toLowerCase()}`,
+      angle,
+      title: str(s.title) || `Short #${idx + 1}: ${p.title || 'Everyday Empire'}`,
+      aspectRatio: '9:16',
+      targetDurationSec: typeof s.targetDurationSec === 'number' ? s.targetDurationSec : 45,
+      linkedLongVideoCTA: str(s.linkedLongVideoCTA) || 'Tap the related video below to watch the full investigation.',
+      segments: Array.isArray(s.segments)
+        ? s.segments.map((seg: any) => ({
+            phase: seg.phase ?? 'CORE_MECHANISM_4_35S',
+            durationSec: typeof seg.durationSec === 'number' ? seg.durationSec : 15,
+            narrationText: str(seg.narrationText),
+            joke: !!seg.joke,
+            diegeticText: str(seg.diegeticText) || 'THE EVERYDAY EMPIRE',
+            gulliverState: {
+              pose: seg.gulliverPose ?? (seg.joke ? 'shocked' : 'pointing'),
+              lipSync: true,
+              monoclePop: !!seg.joke
+            },
+            sfxCues: [
+              { timeOffsetMs: 300, sfxId: (seg.joke ? 'coin_spring' : 'pop_soft') as any },
+              ...(seg.phase === 'BRIDGE_LOOP_35_48S' ? [{ timeOffsetMs: 1500, sfxId: 'whoosh_fast' as const }] : [])
+            ]
+          }))
+        : []
+    }
+  })
+
+  updateProjectEditor(projectId, { autoGeneratedShorts: outShorts })
+  return outShorts
+}
+export async function createProjectFromShort(projectId: string, shortId: string): Promise<ProjectBundle> {
+  const longBundle = getBundle(projectId)
+  const shorts = longBundle.project.editor.autoGeneratedShorts ?? []
+  const short = shorts.find((s) => s.shortId === shortId) ?? shorts[0]
+  if (!short) throw new Error('Shorts tidak ditemukan')
+
+  const newProject = createProject({
+    synopsis: `${short.title} (${short.angle}) — Repurposed from ${longBundle.project.title}`,
+    durationSec: short.targetDurationSec,
+    language: 'en',
+    aspectRatio: '9:16',
+    styleId: longBundle.project.styleId || 'everyday_empire',
+    ttsProvider: longBundle.project.ttsProvider,
+    mediaProvider: longBundle.project.mediaProvider
+  })
+
+  const scenes = short.segments.map((seg: any, i: number) => ({
+    title: `Part ${i + 1}: ${seg.phase.replace(/_/g, ' ')}`,
+    story: `[${seg.phase}] ${seg.diegeticText}`,
+    narration: seg.narrationText,
+    durationMs: seg.durationSec * 1000
+  }))
+
+  replaceScript(newProject.id, short.title, scenes)
+
+  const overlays = short.segments
+    .filter((seg: any) => seg.diegeticText?.trim())
+    .map((seg: any, i: number) => {
+      let start = 0
+      for (let j = 0; j < i; j++) start += short.segments[j].durationSec
+      return {
+        id: randomUUID(),
+        kind: 'text' as const,
+        anchor: 5 as const,
+        x: 0.5,
+        y: 0.38,
+        start,
+        end: start + seg.durationSec,
+        text: seg.diegeticText.toUpperCase(),
+        size: 0.038,
+        color: '#F7BE3B',
+        style: 'box' as const,
+        bold: true
+      }
+    })
+
+  updateProjectEditor(newProject.id, { overlays })
+  return getBundle(newProject.id)
+}
+
+

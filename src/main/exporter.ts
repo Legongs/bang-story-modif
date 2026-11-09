@@ -511,7 +511,7 @@ async function renderProject(ctx: TaskCtx, projectId: string, opts: ExportOption
     }
     if (aout) {
       // loudnorm works at 192 kHz internally, so resample back to 48 kHz afterwards.
-      graph.push(`${aout}${opts.normalizeAudio ? 'loudnorm=I=-14:LRA=11:TP=-1.5,' : ''}aresample=48000,apad,atrim=0:${total.toFixed(3)}[aout]`)
+      graph.push(`${aout}${opts.normalizeAudio ? 'loudnorm=I=-15:LRA=10:TP=-1.0,' : ''}aresample=48000,apad,atrim=0:${total.toFixed(3)}[aout]`)
     } else {
       graph.push(`anullsrc=r=48000:cl=stereo,atrim=0:${total.toFixed(3)}[aout]`)
     }

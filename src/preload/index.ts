@@ -27,7 +27,9 @@ const api: StudioApi = {
   story: {
     script: call('story:script'),
     visuals: call('story:visuals'),
-    musicPrompt: call('story:musicPrompt')
+    musicPrompt: call('story:musicPrompt'),
+    repurposeShorts: call('story:repurposeShorts'),
+    createShortProject: call('story:createShortProject')
   },
   generate: {
     clipImage: call('generate:clipImage'),

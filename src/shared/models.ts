@@ -135,10 +135,11 @@ export const LANGUAGES: { code: string; label: string; english: string }[] = [
 ]
 
 export const DURATIONS: { sec: number; label: string }[] = [
-  { sec: 30, label: '30 detik' },
+  { sec: 45, label: '45 dtk (Shorts 38–52s)' },
   { sec: 60, label: '1 menit' },
   { sec: 180, label: '3 menit' },
   { sec: 300, label: '5 menit' },
+  { sec: 520, label: '8m 40s (Long Monetisasi)' },
   { sec: 600, label: '10 menit' }
 ]
 

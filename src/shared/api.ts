@@ -1,3 +1,4 @@
+import type { RepurposedShort } from './brandManual'
 import type {
   ApiProvider,
   AspectRatio,
@@ -43,6 +44,10 @@ export interface StudioApi {
     visuals(projectId: string, mode: 'missing' | 'all'): Promise<ProjectBundle>
     /** A background-music prompt that fits the finished script, for use in Suno or another music AI. */
     musicPrompt(projectId: string): Promise<MusicPrompt>
+    /** Auto-repurposes 3 YouTube Shorts (Mechanism, Monopoly, Butterfly Effect) from the long script. */
+    repurposeShorts(projectId: string): Promise<RepurposedShort[]>
+    /** Generates a dedicated standalone 9:16 YouTube Shorts project from one of the repurposed shorts. */
+    createShortProject(projectId: string, shortId: string): Promise<ProjectBundle>
   }
   generate: {
     clipImage(clipId: string): Promise<Job>

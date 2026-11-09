@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react'
-import { Pause, Play, SkipBack, SkipForward } from 'lucide-react'
+import { Bird, BoxSelect, Pause, Play, SkipBack, SkipForward } from 'lucide-react'
 import {
   CAPTION_BOX_PAD,
   CAPTION_BOX_RADIUS,
@@ -15,6 +15,7 @@ import {
 import { cameraAt, cameraCss, transitionSecOf } from '@shared/motion'
 import { anchorOffset, contrastColor, overlayVisible, textEffects } from '@shared/overlays'
 import type { AspectRatio, Asset, EditorSettings, Overlay } from '@shared/types'
+import { GulliverMascot } from '../../../components/GulliverMascot'
 import { IconButton, cx } from '../../../components/ui'
 import { timecode } from '../../../lib/format'
 import { auditionWindow, itemAt, updateOverlay, useAudition, useOverlayUi, usePlayback, type TimelineItem } from './engine'
@@ -245,6 +246,8 @@ export function Player({
   const audition = useAudition((s) => s.audition)
   const stopAudition = useAudition((s) => s.stop)
   const [clock, setClock] = useState(0)
+  const [showSafeZone, setShowSafeZone] = useState(false)
+  const [showMascot, setShowMascot] = useState(false)
   const stage = useRef<HTMLDivElement>(null)
 
   // An audition loops a part of the timeline here only; the playhead and the audio do not move.
@@ -337,6 +340,63 @@ export function Player({
           .map((o) => (
             <OverlayItem key={o.id} o={o} asset={null} box={box} editable={editOverlays} />
           ))}
+
+        {/* Gulliver Mascot (Kurzgesagt 2D Flat Vector) */}
+        {showMascot && (
+          <div
+            className="pointer-events-none absolute z-20"
+            style={{
+              right: aspect === '9:16' ? '18%' : '5%',
+              bottom: aspect === '9:16' ? '23%' : '6%'
+            }}
+          >
+            <GulliverMascot
+              width={aspect === '9:16' ? box.w * 0.38 : box.h * 0.35}
+              height={aspect === '9:16' ? box.w * 0.44 : box.h * 0.4}
+              lipSync={viewPlaying}
+              pose={cur?.clip.gulliverPose ?? (cur?.clip.joke ? 'shocked' : 'saluting')}
+              monoclePop={!!cur?.clip.joke}
+            />
+          </div>
+        )}
+
+        {/* YouTube Shorts Safe Zone & Center Safe Box (720x1100) */}
+        {aspect === '9:16' && showSafeZone && (
+          <div className="pointer-events-none absolute inset-0 z-30 select-none">
+            <div
+              className="absolute inset-x-0 top-0 bg-[#E85848]/20 border-b border-[#E85848]/60 flex items-center justify-center text-[10px] text-[#E85848] font-mono font-bold uppercase"
+              style={{ height: `${(180 / 1920) * 100}%` }}
+            >
+              Top UI Safe (180px)
+            </div>
+            <div
+              className="absolute inset-x-0 bottom-0 bg-[#E85848]/20 border-t border-[#E85848]/60 flex items-center justify-center text-[10px] text-[#E85848] font-mono font-bold uppercase"
+              style={{ height: `${(420 / 1920) * 100}%` }}
+            >
+              Bottom Title & CTA Safe (420px)
+            </div>
+            <div
+              className="absolute top-0 bottom-0 right-0 bg-[#E85848]/15 border-l border-[#E85848]/60 flex items-center justify-center text-[9px] text-[#E85848] font-mono font-bold [writing-mode:vertical-lr]"
+              style={{ width: `${(180 / 1080) * 100}%` }}
+            >
+              Icons Safe (180px)
+            </div>
+            <div
+              className="absolute border-2 border-dashed border-[#F7BE3B] flex items-start justify-center p-1.5"
+              style={{
+                width: `${(720 / 1080) * 100}%`,
+                height: `${(1100 / 1920) * 100}%`,
+                left: `${((1080 - 720) / (2 * 1080)) * 100}%`,
+                top: `${((1920 - 1100) / (2 * 1920)) * 100}%`
+              }}
+            >
+              <span className="font-mono text-[9px] font-bold text-[#F7BE3B] uppercase bg-[#1C2B38]/85 px-1.5 py-0.5 rounded">
+                Center Safe Box (720x1100)
+              </span>
+            </div>
+          </div>
+        )}
+
         {!items.length && <div className="flex size-full items-center justify-center text-paper">Belum ada klip</div>}
         {audition && win && (
           <span className="pointer-events-none absolute left-2.5 top-2.5 z-10 flex items-center gap-1.5 rounded-full bg-ink/80 px-2.5 py-1 text-xs font-medium text-paper">
@@ -367,6 +427,34 @@ export function Player({
         <span className="font-mono text-sm">
           {timecode(t)} <span className="text-muted">/ {timecode(total)}</span>
         </span>
+        <div className="flex items-center gap-1.5 ml-2">
+          {aspect === '9:16' && (
+            <button
+              type="button"
+              title="Tampilkan / sembunyikan Zona Aman YouTube Shorts 9:16"
+              onClick={() => setShowSafeZone(!showSafeZone)}
+              className={cx(
+                'flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors cursor-pointer',
+                showSafeZone ? 'bg-[#E85848] text-white border-[#E85848] font-semibold' : 'bg-surface border-line text-ink-2 hover:text-ink'
+              )}
+            >
+              <BoxSelect className="size-3.5" />
+              <span>Safe Zone</span>
+            </button>
+          )}
+          <button
+            type="button"
+            title="Tampilkan / sembunyikan Maskot Gulliver"
+            onClick={() => setShowMascot(!showMascot)}
+            className={cx(
+              'flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors cursor-pointer',
+              showMascot ? 'bg-[#F7BE3B] text-ink font-bold border-[#F7BE3B]' : 'bg-surface border-line text-ink-2 hover:text-ink'
+            )}
+          >
+            <Bird className="size-3.5" />
+            <span>Gulliver</span>
+          </button>
+        </div>
         <span className="flex-1" />
         <span className="text-xs text-ink-2">Spasi untuk putar atau jeda</span>
       </div>

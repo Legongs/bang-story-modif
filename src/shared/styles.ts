@@ -25,6 +25,19 @@ const NO_TEXT = 'No text, no letters, no captions, no watermark, no logo.'
 
 export const VISUAL_STYLES: VisualStyle[] = [
   {
+    id: 'everyday_empire',
+    name: 'Everyday Empire (Kurzgesagt)',
+    category: '2d',
+    niche: 'Investigasi, sains & monopoli global',
+    swatch: '#28A4C4',
+    ink: '#1C2B38',
+    prompt:
+      '2D flat vector studio illustration frame in the iconic Kurzgesagt explainer art style. High-contrast, zero grain, rounded corners, soft geometric drop shadows, NO harsh black outlines. Limited harmonious corporate color palette: cream (#FDF7EC), navy (#214154), gold (#F7BE3B), sea blue (#28A4C4), cyan (#7CE4F8), coral (#E85848), mint (#5ED6B3). Clean isometric and orthographic compositions of everyday objects, mechanical cross-sections, global supply chain graphics, factory machinery, and cargo docks. Clear, clean visual storytelling with depth and geometric elegance. ' +
+      NO_TEXT,
+    characterHint:
+      'a 2D flat vector cargo captain seagull named Gulliver, wearing a navy captain hat (#214154) and a round gold coin monocle (#F7BE3B), simple geometric rounded shapes, no harsh black outlines, Kurzgesagt art style'
+  },
+  {
     id: 'stickman',
     name: 'Stickman berwarna',
     category: '2d',

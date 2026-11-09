@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { FileText, Trash2, Upload } from 'lucide-react'
+import { FileText, Sparkles, Trash2, Upload } from 'lucide-react'
+import { MASTER_BRAND_MANUAL } from '@shared/brandManual'
 import { Badge, Button, confirmDialog, cx, inputCls } from '../components/ui'
 import { errorText } from '../lib/format'
 import { useApp } from '../store/app'
@@ -81,8 +82,11 @@ export function BrandSection({
             </Badge>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="secondary" icon={<Sparkles className="size-4 text-accent-dark" />} onClick={() => { setContent(MASTER_BRAND_MANUAL); setSaved(false); toast('info', 'Panduan The Economic Everyday Empire dimuat. Klik Simpan untuk menerapkan.'); }}>
+              Muat SSOT Manual
+            </Button>
             <Button icon={<Upload className="size-4" />} onClick={() => void handleUpload()}>
-              Unggah file brand.md
+              Unggah file
             </Button>
             {content.trim() && (
               <Button variant="danger" icon={<Trash2 className="size-4" />} onClick={() => void handleClear()}>

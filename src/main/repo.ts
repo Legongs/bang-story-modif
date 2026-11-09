@@ -28,7 +28,7 @@ export const DEFAULT_EDITOR: EditorSettings = {
   captionPosition: 'bawah',
   captionSize: 'sedang',
   musicAssetId: null,
-  musicVolumeDb: -18,
+  musicVolumeDb: -19,
   duckMusic: true,
   overlays: []
 }
@@ -256,6 +256,12 @@ export function touchProject(id: string, patch: Partial<Pick<Project, 'status' |
   getDb()
     .prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = @id`)
     .run({ ...patch, id, now: Date.now() })
+}
+
+export function updateProjectEditor(id: string, patch: Partial<EditorSettings>): void {
+  const p = getProject(id)
+  const updated = { ...p.editor, ...patch }
+  getDb().prepare('UPDATE projects SET editor_json = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(updated), Date.now(), id)
 }
 
 /** Saves the editable parts of a project. Asset links stay owned by the main process. */
@@ -789,6 +795,15 @@ const toGlobalCharacter = (r: Row): GlobalCharacter => ({
 
 export function listGlobalCharacters(): GlobalCharacter[] {
   const rows = getDb().prepare('SELECT * FROM global_characters ORDER BY created_at ASC').all() as Row[]
+  if (rows.length === 0) {
+    saveGlobalCharacter({
+      name: 'Gulliver',
+      description:
+        'A 2D flat vector cargo captain seagull in Kurzgesagt art style, wearing a navy captain hat (#214154) with a gold anchor emblem and a round gold coin monocle (#F7BE3B) on his right eye. No harsh black outlines, smooth geometric curves.',
+      isDefault: true
+    })
+    return (getDb().prepare('SELECT * FROM global_characters ORDER BY created_at ASC').all() as Row[]).map(toGlobalCharacter)
+  }
   return rows.map(toGlobalCharacter)
 }
 

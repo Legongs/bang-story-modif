@@ -28,9 +28,10 @@ const FILTERS: { id: 'all' | 'draft' | 'progress' | 'exported'; label: string; m
 ]
 
 const SUGGESTIONS = [
-  'Asal-usul Sumpah Palapa dan bagaimana Gajah Mada menepatinya',
-  'Misteri Segitiga Bermuda: fakta dan mitosnya',
-  'Kenapa kucing suka masuk ke dalam kotak?'
+  'The Secret Monopoly of Your Zipper: How YKK controls 50% of the world',
+  'The Shipping Container: The metal box that created the modern world economy',
+  'The Ballpoint Pen Cartel: The microscopic tungsten sphere that took 60 years to master',
+  'The Cardboard Box Empire: Why a paper shutdown halts global trade in 48 hours'
 ]
 
 /** "a, b dan c" */
@@ -53,10 +54,10 @@ export function Home() {
   const [synopsis, setSynopsis] = useState('')
   const [research, setResearch] = useState('')
   const [showResearch, setShowResearch] = useState(false)
-  const [durationSec, setDurationSec] = useState(60)
-  const [language, setLanguage] = useState('id')
+  const [durationSec, setDurationSec] = useState(520)
+  const [language, setLanguage] = useState('en')
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9')
-  const [styleId, setStyleId] = useState('stickman')
+  const [styleId, setStyleId] = useState('everyday_empire')
   const [tts, setTts] = useState<TtsProvider>('gemini')
   const [creating, setCreating] = useState(false)
 

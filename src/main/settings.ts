@@ -1,10 +1,11 @@
+import { MASTER_BRAND_MANUAL } from '@shared/brandManual'
 import { DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, getImageModel, getVideoModel } from '@shared/higgsfield'
 import type { AppSettings } from '@shared/types'
 import { getDb } from './db'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   defaultTtsProvider: 'gemini',
-  defaultLanguage: 'id',
+  defaultLanguage: 'en',
   exportFolder: null,
   llmProvider: 'gemini',
   llmModels: { gemini: 'gemini-3.8-flash', openrouter: '', groq: '', ninerouter: '', custom: '' },
@@ -15,7 +16,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   imageModel: DEFAULT_IMAGE_MODEL,
   videoModel: DEFAULT_VIDEO_MODEL,
   whisperAuto: true,
-  brandMarkdown: '',
+  brandMarkdown: MASTER_BRAND_MANUAL,
   mediaProvider: 'higgsfield',
   flowMcpCommand: 'npx flow-mcp'
 }

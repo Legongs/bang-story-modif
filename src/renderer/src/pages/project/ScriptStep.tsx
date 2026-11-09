@@ -9,6 +9,7 @@ import { Badge, Button, IconButton, Menu, confirmDialog, cx, inputCls } from '..
 import { clipNumber, errorText, mmss } from '../../lib/format'
 import { useApp } from '../../store/app'
 import { useProject } from '../../store/project'
+import { AutoShortsSection } from './AutoShortsSection'
 
 /** A thin gap between scenes that offers to insert one there. */
 function InsertGap({ onInsert }: { onInsert: () => void }) {
@@ -285,6 +286,8 @@ export function ScriptStep() {
               Tambah adegan
             </button>
           </div>
+
+          <AutoShortsSection project={project} />
         </div>
       </div>
 
