@@ -17,15 +17,11 @@ if errorlevel 1 (
 
 rem Pertama kali dibuka, atau folder node_modules berasal dari OS lain: pasang ulang.
 if not exist "node_modules\.bangstory-windows" (
-  if exist "node_modules" (
-    echo  Membersihkan node_modules lama...
-    rmdir /s /q "node_modules"
-  )
   echo.
   echo  Menyiapkan Bang Story untuk pertama kali.
   echo  Butuh koneksi internet dan beberapa menit, jangan tutup jendela ini...
   echo.
-  call npm install
+  call npm install --ignore-scripts
   if errorlevel 1 (
     echo.
     echo  Gagal memasang. Periksa koneksi internet lalu coba lagi.
