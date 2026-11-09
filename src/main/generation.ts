@@ -84,8 +84,23 @@ function imageProgress(ctx: TaskCtx, what: string) {
 
 // ---------- prompts ----------
 
+/**
+ * Strips out non-visual software/rigging notes, Indonesian role headers,
+ * and technical metadata, leaving only concise physical appearance and clothing.
+ */
+function cleanVisualDescription(desc: string): string {
+  if (!desc) return ''
+  return desc
+    .replace(/(?:peran\s*(?:di\s*video)?|animasi\s*khusus|rigging|spesies\/wujud)\s*:[^\n]*/gi, '')
+    .replace(/^\s*[-*•#]+\s*/gm, '')
+    .replace(/\b(?:monoclePop|lipSync|joke)\b[^\n]*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function characterLine(c: Character): string {
-  return `${c.name}: ${c.description}`
+  const d = cleanVisualDescription(c.description)
+  return `${c.name}: ${d || c.description}`
 }
 
 /** Splits the storyboard's "Avoid:" line off the scene, so it can be phrased as a clear instruction. */
@@ -99,45 +114,54 @@ function splitAvoid(visual: string): { scene: string; avoid: string } {
 }
 
 /**
- * The image prompt for a clip. The scene comes first so the model gets the content right, then who the
- * characters are, then the art style. Clothing follows the scene's Wardrobe line when it has one, so a
- * character can change out of the outfit on their reference sheet (no spacesuit indoors).
+ * The image prompt for a clip. Clean, structured, and focused so the image AI draws the scene accurately.
  */
-function clipPrompt(project: Project, clip: Clip, chars: Character[], refNames: string[], limit: number): string {
+function clipPrompt(project: Project, clip: Clip, chars: Character[], _refNames: string[], limit: number): string {
   const style = getStyle(project.styleId)
   const { scene, avoid } = splitAvoid(clip.visualPrompt)
-  const wardrobe = /^\s*wardrobe\s*:/im.test(scene)
-  const parts = [`Scene:\n${scene}`]
-  if (chars.length)
-    parts.push(
-      `Recurring characters in this scene. Keep each one's body, face, hair and skin exactly as described${refNames.length ? ' and as on their reference sheet' : ''}.` +
-        (wardrobe
-          ? ' Their clothing follows the Wardrobe line of the scene: the default outfit only where it says so, otherwise the custom outfit.'
-          : ' They wear their default outfit.') +
-        `\n${chars.map(characterLine).join('\n')}`
-    )
-  if (refNames.length)
-    parts.push(
-      `Reference images are character sheets, in this order: ${refNames.join(', ')}. Use them for each character's identity, proportions and colors. ` +
-        (wardrobe ? 'Copy the costume from a sheet only for characters whose Wardrobe line says "default outfit". ' : 'Match the costume to the sheet. ') +
-        'Do not copy the sheet layout, poses or plain background.'
-    )
+
+  const parts: string[] = []
+
+  // 1. Scene description (Setting, Action, Framing)
+  const cleanScene = scene
+    .replace(/^Setting:\s*/im, 'Setting: ')
+    .replace(/^Action:\s*/im, 'Action: ')
+    .replace(/^Framing:\s*/im, 'Framing: ')
+    .replace(/^Wardrobe:\s*/im, 'Wardrobe: ')
+  parts.push(cleanScene)
+
+  // 2. Characters appearing in the scene
+  if (chars.length) {
+    parts.push(`Characters in scene: ${chars.map(characterLine).join('; ')}.`)
+  }
+
+  // 3. Art Style
   parts.push(`Art style: ${style.prompt}`)
-  if (avoid) parts.push(`Must not appear in the image: ${avoid}.`)
-  parts.push(`Frame format ${project.aspectRatio}, full-bleed composition.`)
-  const full = parts.join('\n\n')
+
+  // 4. Exclusions / Negative constraints
+  if (avoid) parts.push(`Negative constraints (must not appear): ${avoid}.`)
+  parts.push(`Frame format ${project.aspectRatio}, high quality full-bleed composition.`)
+
+  const full = parts.filter(Boolean).join('\n\n')
   if (full.length <= limit) return full
-  // Models with short prompt limits get the scene first, so trimming only loses style detail.
-  return [scene, chars.map(characterLine).join('; '), avoid && `Must not appear: ${avoid}.`, style.prompt].filter(Boolean).join('\n\n')
+
+  return [cleanScene, chars.map(characterLine).join('; '), avoid && `Avoid: ${avoid}.`, style.prompt]
+    .filter(Boolean)
+    .join('\n\n')
+    .slice(0, limit)
 }
 
 function sheetPrompt(project: Project, c: Character): string {
   const style = getStyle(project.styleId)
+  const cleanDesc = cleanVisualDescription(c.description) || c.description
   return [
-    style.prompt,
-    `Character reference sheet for "${c.name}": ${c.description}. The character is ${style.characterHint}.`,
-    'Show the SAME character three times side by side: front view, three-quarter view and side view, full body, neutral standing pose, evenly spaced, on a plain light neutral background (this overrides any background instruction above). Consistent proportions, costume and colors in all three views.'
-  ].join('\n\n')
+    `Character turnaround model sheet of ${c.name}.`,
+    `Appearance: ${cleanDesc}.`,
+    `Art style: ${style.name}, clean 2D vector art style, crisp solid shapes, high contrast, harmonious palette. No text, no letters, no watermark, no background objects.`,
+    'Layout: Three full-body standing views of the SAME character side by side: front view, three-quarter view, and side profile view. Neutral upright standing pose, centered and evenly spaced on a clean plain neutral background. Consistent character proportions, costume, and colors across all views.'
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 // ---------- waiting for character sheets ----------
