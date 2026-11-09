@@ -238,16 +238,31 @@ class FlowMcpClient {
     }
     return res
   }
+
+  /** Ensures connection to Chrome via flow_connect if supported. */
+  async ensureConnected(onProgress?: (msg: string) => void): Promise<void> {
+    await this.ensureStdio()
+    if (this.knownTools.includes('flow_connect')) {
+      onProgress?.('Membuka & menyambungkan browser Chrome ke Google Flow…')
+      try {
+        await this.callTool('flow_connect', { headless: false })
+      } catch (e) {
+        console.warn('[flow-mcp] flow_connect error:', (e as Error).message)
+      }
+    }
+  }
+
   /** Tests connection to Google Flow via Flow MCP. */
   async testConnection(): Promise<KeyTestResult> {
     this.resetProcess()
     try {
+      await this.ensureConnected()
       const status = await this.callTool('flow_status')
       const account = status.account || status.expectedAccount
       const parts = ['Terhubung ke Flow MCP']
       if (account) parts.push(`Akun: ${account}`)
       if (status.credits != null) parts.push(`${status.credits} kredit`)
-      else if (status.browser === false) parts.push('Chrome siap (otomatis terbuka saat generate)')
+      if (status.browser) parts.push('Chrome terhubung')
       else if (status.flowAccessible) parts.push('Flow siap')
       return { ok: true, message: parts.join(' · ') }
     } catch (e) {
@@ -311,7 +326,7 @@ class FlowMcpClient {
     onProgress?: (progress: number, message: string) => void
   }): Promise<string> {
     opts.onProgress?.(0.1, 'Menyiapkan permintaan gambar ke Google Flow…')
-    await this.ensureStdio()
+    await this.ensureConnected((msg) => opts.onProgress?.(0.15, msg))
 
     const ratio = opts.aspectRatio === '9:16' ? '9:16' : '16:9'
     const hasImageTool = this.knownTools.includes('flow_generate_image')
@@ -372,7 +387,7 @@ class FlowMcpClient {
     onProgress?: (progress: number, message: string) => void
   }): Promise<string> {
     opts.onProgress?.(0.1, 'Menyiapkan permintaan video ke Google Flow (Veo)…')
-    await this.ensureStdio()
+    await this.ensureConnected((msg) => opts.onProgress?.(0.15, msg))
 
     const ratio = opts.aspectRatio === '9:16' ? '9:16' : '16:9'
     const hasVideoTool = this.knownTools.includes('flow_generate_video')
