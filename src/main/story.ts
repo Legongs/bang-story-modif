@@ -57,26 +57,33 @@ interface ScriptPlan {
 /** Writes the scene-by-scene script (story and voice-over) that the user reviews before any visuals exist. */
 export async function generateScript(projectId: string): Promise<ProjectBundle> {
   const project = getProject(projectId)
-  if (!project.synopsis.trim()) throw new Error('Tulis ide cerita atau sinopsis dulu.')
+  if (!project.synopsis.trim() && !project.research.trim()) {
+    throw new Error('Tulis ide cerita atau unggah materi riset dulu.')
+  }
   const lang = languageOf(project.language)
   const count = clipCountFor(project.durationSec)
   const brand = getSettings().brandMarkdown.trim()
   const brandRule = brand ? ` Strictly follow the brand guidelines (brand.md):\n${brand}\n` : ''
+  const researchRule = project.research.trim()
+    ? 'Factual research material / source topic notes are provided. You MUST base your narrative, storyline, scene progression, key facts, and voice-over closely on the factual material and insights provided in the research notes.'
+    : ''
 
   const system = [
     'You are a scriptwriter for faceless YouTube storytelling and explainer videos.',
     'You turn an idea into a sequence of short scenes. Each scene has one line of voice-over.',
     'The first scene is a strong hook. The story has a clear beginning, rising tension and a satisfying ending. The last scene can invite viewers to subscribe.',
     'Keep facts accurate for history and science topics, and always call each character by the same name.',
+    researchRule,
     'The narration is voiced by an expressive text-to-speech model. Where it helps the delivery, add a few English vocal tags in angle brackets inside the narration, such as <short pause>, <long pause>, <chuckles>, <sigh>, <gasp> or <whispers>. Use them sparingly, at most one or two per scene, and never other markup.',
     brandRule,
     `Write everything in ${lang}, except the vocal tags, which stay in English.`
   ].filter(Boolean).join(' ')
   const prompt = [
-    `Idea / synopsis:\n${project.synopsis}`,
+    project.synopsis.trim() ? `Idea / synopsis:\n${project.synopsis}` : '',
+    project.research.trim() ? `Research material / source topic notes:\n${project.research}` : '',
     `Target video length: about ${project.durationSec} seconds.`,
     `Write exactly ${count} scenes.`
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
 
   const plan = await generateJson<ScriptPlan>({ system, prompt, schema: SCRIPT_SCHEMA, name: 'script' })
   const scenes = (plan.scenes ?? []).filter((c) => str(c.narration) || str(c.story))
@@ -278,7 +285,8 @@ export async function generateVisuals(projectId: string, mode: 'missing' | 'all'
   const prompt = [
     `Visual style of the video (for your framing choices only, do not repeat it in the descriptions): ${getStyle(project.styleId).name}.`,
     `Frame format: ${project.aspectRatio === '9:16' ? 'vertical 9:16' : 'horizontal 16:9'}.`,
-    `Idea of the video: ${project.synopsis}`,
+    `Idea of the video: ${project.synopsis || '(none)'}`,
+    project.research.trim() ? `Topic research context:\n${project.research.slice(0, 1500)}` : '',
     brand ? `Brand visual guidelines:\n${brand}` : '',
     known.length ? `Existing characters (keep them exactly):\n${known.map((c) => `- ${c.name}: ${c.description}`).join('\n')}` : 'There are no existing characters yet.',
     `Full script:\n${script}`,
@@ -356,7 +364,7 @@ export async function generateMusicPrompt(projectId: string): Promise<MusicPromp
   const b = getBundle(projectId)
   const p = b.project
   const clips = b.clips
-  if (!clips.some((c) => c.narration.trim() || c.story.trim()) && !p.synopsis.trim()) throw new Error('Naskah masih kosong.')
+  if (!clips.some((c) => c.narration.trim() || c.story.trim()) && !p.synopsis.trim() && !p.research.trim()) throw new Error('Naskah masih kosong.')
   const durationSec = Math.max(10, Math.round(clips.reduce((n, c) => n + c.durationMs, 0) / 1000) || p.durationSec)
   const style = getStyle(p.styleId)
   const brand = getSettings().brandMarkdown.trim()
@@ -372,11 +380,12 @@ export async function generateMusicPrompt(projectId: string): Promise<MusicPromp
     .join('\n')
   const prompt = [
     `Video title: ${p.title || '(untitled)'}`,
-    `Idea: ${p.synopsis}`,
+    `Idea: ${p.synopsis || '(none)'}`,
+    p.research.trim() ? `Research topic: ${p.research.slice(0, 500)}` : '',
     `Visual style: ${style.name}.`,
     `Video length: about ${durationSec} seconds.`,
     `Scenes:\n${scenes}`
-  ].join('\n\n')
+  ].filter(Boolean).join('\n\n')
   const r = await generateJson<Partial<MusicPrompt>>({ system, prompt, schema: MUSIC_SCHEMA, name: 'music' })
   const out: MusicPrompt = {
     title: str(r.title),

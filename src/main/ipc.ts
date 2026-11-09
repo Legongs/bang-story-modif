@@ -94,6 +94,25 @@ export function registerIpc(): void {
   handle('projects:save', (snap: ProjectSnapshot) => ({ updatedAt: saveSnapshot(snap) }))
   handle('projects:remove', (id: string) => removeProject(id))
   handle('projects:duplicate', (id: string) => duplicateProject(id))
+  handle('projects:uploadResearchDoc', async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = await dialog.showOpenDialog(win!, {
+      title: 'Pilih file dokumen materi riset topik',
+      filters: [
+        { name: 'Dokumen Teks & Riset', extensions: ['txt', 'md', 'markdown', 'csv', 'json', 'html', 'rtf'] },
+        { name: 'Semua Berkas', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+    if (res.canceled || !res.filePaths[0]) return null
+    const src = res.filePaths[0]
+    try {
+      const content = readFileSync(src, 'utf8')
+      return { name: basename(src), content }
+    } catch (e) {
+      throw new Error(`Gagal membaca berkas: ${(e as Error).message}. Pastikan berkas berupa teks yang valid.`)
+    }
+  })
 
   handle('story:script', (projectId: string) => generateScript(projectId))
   handle('story:musicPrompt', (projectId: string) => generateMusicPrompt(projectId))

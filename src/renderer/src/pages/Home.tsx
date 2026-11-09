@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, ArrowRight, Copy, FolderOpen, MoreHorizontal, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Copy, FileText, FolderOpen, MoreHorizontal, Plus, Search, SlidersHorizontal, Trash2, Upload } from 'lucide-react'
 import { DURATIONS, LANGUAGES, llmName } from '@shared/models'
 import { getStyle } from '@shared/styles'
 import type { ApiProvider, AppSettings, AspectRatio, KeyStatus, ProjectStatus, ProjectSummary, TtsProvider } from '@shared/types'
@@ -51,6 +51,8 @@ export function Home() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['id']>('all')
   const [query, setQuery] = useState('')
   const [synopsis, setSynopsis] = useState('')
+  const [research, setResearch] = useState('')
+  const [showResearch, setShowResearch] = useState(false)
   const [durationSec, setDurationSec] = useState(60)
   const [language, setLanguage] = useState('id')
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9')
@@ -117,7 +119,16 @@ export function Home() {
   const start = async (): Promise<void> => {
     setCreating(true)
     try {
-      const b = await window.api.projects.create({ synopsis, durationSec, language, aspectRatio, styleId, ttsProvider: tts })
+      const b = await window.api.projects.create({
+        synopsis,
+        research,
+        durationSec,
+        language,
+        aspectRatio,
+        styleId,
+        ttsProvider: tts,
+        mediaProvider: appSettings?.mediaProvider
+      })
       go({ name: 'project', id: b.project.id })
     } catch (e) {
       toast('error', errorText(e))
@@ -200,6 +211,66 @@ export function Home() {
               placeholder="Contoh: Gajah Mada bersumpah tidak akan menikmati palapa sebelum Nusantara bersatu. Para menteri menertawakannya, tapi dia membuktikannya…"
               className="resize-none bg-transparent text-lg leading-relaxed outline-none placeholder:text-muted/70"
             />
+
+            {showResearch || research.trim() ? (
+              <div className="flex flex-col gap-2 rounded-xl bg-sand/60 p-3 border border-line">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-ink">
+                    <FileText className="size-3.5 text-accent" />
+                    <span>Materi riset topik</span>
+                    <span className="text-[11px] text-muted font-normal">(opsional)</span>
+                    {research.trim() && (
+                      <Badge tone="ok">{research.trim().split(/\s+/).length} kata</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await window.api.projects.uploadResearchDoc()
+                        if (res) {
+                          setResearch(res.content)
+                          setShowResearch(true)
+                          toast('success', `Riset "${res.name}" berhasil dimuat`)
+                        }
+                      }}
+                      className="flex items-center gap-1 text-xs font-medium text-accent-dark hover:underline cursor-pointer"
+                    >
+                      <Upload className="size-3" />
+                      {research.trim() ? 'Ganti berkas' : 'Unggah berkas'}
+                    </button>
+                    {research.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setResearch('')}
+                        className="text-xs text-bad-ink hover:underline cursor-pointer"
+                      >
+                        Hapus
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <textarea
+                  rows={2}
+                  value={research}
+                  onChange={(e) => setResearch(e.target.value)}
+                  placeholder="Tempel catatan fakta riset untuk topik video ini, atau unggah file .txt / .md..."
+                  className="resize-none bg-transparent text-xs font-mono leading-relaxed outline-none placeholder:text-muted/70 text-ink"
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-xs text-muted">
+                <button
+                  type="button"
+                  onClick={() => setShowResearch(true)}
+                  className="flex items-center gap-1.5 font-medium text-ink-2 hover:text-accent-dark transition-colors cursor-pointer"
+                >
+                  <FileText className="size-3.5 text-accent" />
+                  <span>+ Tambah materi riset topik (.txt, .md, atau catatan)</span>
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-2 border-t border-dashed border-line pt-3.5">
               <Select
                 variant="pill"

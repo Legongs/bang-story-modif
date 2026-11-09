@@ -33,6 +33,8 @@ export interface StudioApi {
     save(snapshot: ProjectSnapshot): Promise<{ updatedAt: number }>
     remove(id: string): Promise<void>
     duplicate(id: string): Promise<ProjectSummary>
+    /** Uploads a research document (.txt, .md, etc.) from disk. */
+    uploadResearchDoc(): Promise<{ name: string; content: string } | null>
   }
   story: {
     /** Idea → scene-by-scene script (story and voice-over). */

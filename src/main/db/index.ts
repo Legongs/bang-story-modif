@@ -146,6 +146,10 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   ALTER TABLE projects ADD COLUMN media_provider TEXT DEFAULT 'higgsfield';
+  `,
+  // Research material / notes for video topic.
+  `
+  ALTER TABLE projects ADD COLUMN research TEXT NOT NULL DEFAULT '';
   `
 ]
 

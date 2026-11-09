@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Play, Sparkles, Square } from 'lucide-react'
+import { Bot, FileText, Play, Sparkles, Square, Trash2, Upload } from 'lucide-react'
 import { getImageModel } from '@shared/higgsfield'
 import { DURATIONS, LANGUAGES, clipCountFor, llmName } from '@shared/models'
 import { getStyle } from '@shared/styles'
 import type { KeyStatus, LlmProvider, TtsProvider, VoiceOption } from '@shared/types'
 import { Select } from '../../components/Select'
 import { StylePicker } from '../../components/StylePicker'
-import { Button, Chip, Field, Segmented, confirmDialog, cx } from '../../components/ui'
+import { Badge, Button, Chip, Field, Segmented, confirmDialog, cx } from '../../components/ui'
 import { errorText } from '../../lib/format'
 import { geminiPreview } from '../../lib/voicePreviews'
 import { TTS_NAMES, ttsReadiness, usableTts } from '../../lib/keys'
@@ -135,8 +135,8 @@ export function IdeaStep() {
   const model = getImageModel(project.imageModel)
 
   const compose = async (): Promise<void> => {
-    if (!project.synopsis.trim()) {
-      toast('error', 'Tulis ide cerita atau sinopsis dulu.')
+    if (!project.synopsis.trim() && !project.research?.trim()) {
+      toast('error', 'Tulis ide cerita atau unggah materi riset dulu.')
       return
     }
     if (clips.length) {
@@ -189,6 +189,68 @@ export function IdeaStep() {
               <div className="flex items-center justify-between text-xs text-muted">
                 <span>Tips: tulis juga suasana yang kamu mau, misalnya tegang, lucu, atau haru.</span>
                 <span className="font-mono">{project.synopsis.length.toLocaleString('id-ID')} / 4.000</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2.5 rounded-2xl border-[1.5px] border-line-2 bg-surface px-[18px] pb-3.5 pt-3.5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <FileText className="size-4 text-accent" />
+                  <span className="text-[13px] font-semibold text-ink">
+                    Materi Riset Topik
+                  </span>
+                  <span className="text-xs text-muted">(opsional)</span>
+                  {project.research?.trim() ? (
+                    <Badge tone="ok">
+                      {project.research.trim().split(/\s+/).length.toLocaleString('id-ID')} kata
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    icon={<Upload className="size-3.5" />}
+                    onClick={async () => {
+                      try {
+                        const res = await window.api.projects.uploadResearchDoc()
+                        if (res) {
+                          updateProject({ research: res.content })
+                          toast('success', `Materi riset "${res.name}" berhasil dimuat (${res.content.length.toLocaleString('id-ID')} karakter)`)
+                        }
+                      } catch (e) {
+                        toast('error', errorText(e))
+                      }
+                    }}
+                  >
+                    {project.research?.trim() ? 'Ganti berkas' : 'Unggah berkas riset'}
+                  </Button>
+                  {project.research?.trim() && (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      icon={<Trash2 className="size-3.5" />}
+                      onClick={() => {
+                        updateProject({ research: '' })
+                        toast('info', 'Materi riset dikosongkan')
+                      }}
+                    >
+                      Hapus
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <textarea
+                rows={4}
+                value={project.research ?? ''}
+                onChange={(e) => updateProject({ research: e.target.value })}
+                placeholder="Unggah berkas riset (.txt, .md, .markdown) atau tempel data fakta, artikel, catatan riset, dan poin pembahasan topik di sini. AI akan memakai fakta ini sebagai sumber naskah cerita..."
+                className="resize-y bg-transparent text-sm font-mono leading-relaxed outline-none placeholder:text-muted/70 text-ink"
+              />
+              <div className="flex items-center justify-between text-xs text-muted border-t border-dashed border-line pt-2">
+                <span>Fakta, data, dan alur naskah akan diselaraskan dengan materi riset ini.</span>
+                {project.research?.trim() ? (
+                  <span className="font-mono">{project.research.length.toLocaleString('id-ID')} karakter</span>
+                ) : null}
               </div>
             </div>
 

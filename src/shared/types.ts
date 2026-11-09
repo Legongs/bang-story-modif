@@ -97,6 +97,8 @@ export interface Project {
   id: string
   title: string
   synopsis: string
+  /** Research notes or uploaded reference documents for the video topic. */
+  research: string
   durationSec: number
   language: string
   aspectRatio: AspectRatio
@@ -258,6 +260,7 @@ export interface ProjectSnapshot {
 
 export interface NewProjectInput {
   synopsis?: string
+  research?: string
   durationSec?: number
   language?: string
   aspectRatio?: AspectRatio

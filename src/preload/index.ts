@@ -21,7 +21,8 @@ const api: StudioApi = {
     get: call('projects:get'),
     save: call('projects:save'),
     remove: call('projects:remove'),
-    duplicate: call('projects:duplicate')
+    duplicate: call('projects:duplicate'),
+    uploadResearchDoc: call('projects:uploadResearchDoc')
   },
   story: {
     script: call('story:script'),

@@ -250,13 +250,22 @@ export function ScriptStep() {
             <span className="text-muted">Durasi akhir tiap adegan mengikuti panjang suara narasinya.</span>
           </div>
 
-          {project.synopsis.trim() && (
-            <div className="flex items-start gap-3 rounded-xl bg-sand px-4 py-3 text-[13px] text-ink-2">
-              <span className="shrink-0 font-semibold text-ink">Ide awal</span>
-              <span className="line-clamp-2 flex-1">{project.synopsis}</span>
-              <button type="button" onClick={() => updateProject({ step: 1 })} className="shrink-0 font-semibold text-accent-dark hover:underline">
-                Ubah ide
-              </button>
+          {(project.synopsis.trim() || project.research?.trim()) && (
+            <div className="flex flex-col gap-1.5 rounded-xl bg-sand px-4 py-3 text-[13px] text-ink-2">
+              <div className="flex items-start gap-3">
+                <span className="shrink-0 font-semibold text-ink">Ide awal</span>
+                <span className="line-clamp-2 flex-1">{project.synopsis || '(tanpa sinopsis)'}</span>
+                <button type="button" onClick={() => updateProject({ step: 1 })} className="shrink-0 font-semibold text-accent-dark hover:underline">
+                  Ubah ide / riset
+                </button>
+              </div>
+              {project.research?.trim() && (
+                <div className="flex items-center gap-2 text-xs text-muted border-t border-dashed border-line pt-1.5">
+                  <span className="font-medium text-ink-2">Materi riset:</span>
+                  <span className="truncate max-w-[500px]">{project.research.slice(0, 100)}...</span>
+                  <span className="font-semibold text-accent-dark">({project.research.trim().split(/\s+/).length} kata)</span>
+                </div>
+              )}
             </div>
           )}
 
